@@ -1,0 +1,38 @@
+# FastAPI y ASGI server
+fastapi
+uvicorn
+python-multipart
+
+# Base de datos
+# psycopg2-binary # Eliminado para usar psycopg v3 consistentemente
+SQLAlchemy
+alembic
+psycopg # Asegúrate de que sea una versión compatible con SQLAlchemy y tu PG
+
+# Seguridad
+python-jose[cryptography]
+# passlib[bcrypt] >= 1.7.4 # passlib maneja bcrypt, bcrypt directo puede no ser necesario o causar conflictos
+bcrypt == 4.3.0 # Si se requiere específicamente y no hay conflicto con passlib
+passlib[bcrypt] # Es más común usar passlib para el hashing de contraseñas
+
+# Serialización/Validación
+pydantic
+pydantic-settings
+email-validator  # Nombre correcto del paquete
+
+# Logging
+python-logging-loki  # Opcional
+
+# Utilidades
+python-dotenv
+
+# Procesamiento de archivos
+aiofiles
+
+# Testing
+pytest
+pytest-asyncio
+httpx
+
+# Celery (si se usa)
+celery[redis]

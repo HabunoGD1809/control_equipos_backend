@@ -8,10 +8,10 @@ from fastapi import HTTPException, status
 
 # Importar modelos y schemas
 from app.models.inventario_stock import InventarioStock
-from app.schemas.inventario_stock import InventarioStockUpdate # Solo para actualizar campos menores
-from .base_service import BaseService # Importar BaseService
+from app.schemas.inventario_stock import InventarioStockUpdate
+from .base_service import BaseService 
 
-logger = logging.getLogger(__name__) # Configurar logger
+logger = logging.getLogger(__name__) 
 
 # CORREGIDO: Heredar de BaseService
 class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUpdate]):
@@ -23,7 +23,43 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
     """
     def __init__(self):
         super().__init__(InventarioStock)
+        
+    def get_multi_by_filters(
+        self,
+        db: Session,
+        *,
+        tipo_item_id: Optional[UUID] = None,
+        ubicacion: Optional[str] = None,
+        lote: Optional[str] = None,
+        skip: int = 0,
+        limit: int = 100,
+    ) -> List[InventarioStock]:
+        """
+        Obtiene una lista de registros de stock aplicando filtros opcionales.
+        """
+        logger.debug(
+            f"Listando stock con filtros: tipo_item_id='{tipo_item_id}', "
+            f"ubicacion='{ubicacion}', lote='{lote}', skip={skip}, limit={limit}"
+        )
+        statement = select(self.model)
 
+        if tipo_item_id:
+            statement = statement.where(self.model.tipo_item_id == tipo_item_id)
+        if ubicacion:
+            statement = statement.where(self.model.ubicacion.ilike(f"%{ubicacion}%"))
+        if lote:
+            # Usamos 'ilike' para búsquedas case-insensitive y parciales
+            statement = statement.where(self.model.lote.ilike(f"%{lote}%"))
+
+        statement = (
+            statement.order_by(self.model.ubicacion, self.model.tipo_item_id)
+            .offset(skip)
+            .limit(limit)
+        )
+
+        result = db.execute(statement)
+        return list(result.scalars().all())
+    
     def get_stock_record(
         self, db: Session, *, tipo_item_id: UUID, ubicacion: str, lote: Optional[str] = None
     ) -> Optional[InventarioStock]:

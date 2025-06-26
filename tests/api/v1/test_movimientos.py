@@ -101,9 +101,9 @@ async def test_create_movimiento_salida_temporal_success(
     assert equipo_actualizado.get("estado", {}).get("nombre") == "Prestado"
 
 async def test_create_movimiento_no_permission(
-    client: AsyncClient, auth_token_user: str, equipo_para_movimiento: Equipo
+    client: AsyncClient, auth_token_usuario_regular: str, equipo_para_movimiento: Equipo
 ):
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     movimiento_schema = MovimientoCreate(
         equipo_id=equipo_para_movimiento.id, tipo_movimiento="Asignacion Interna",
         origen="Origen", destino="Destino", proposito="Test",

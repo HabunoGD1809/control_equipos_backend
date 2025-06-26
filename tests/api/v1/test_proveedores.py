@@ -36,8 +36,11 @@ async def test_create_proveedor_success(client: AsyncClient, auth_token_admin: s
     assert created_prov["rnc"] == prov_rnc
     assert "id" in created_prov
 
-async def test_create_proveedor_no_permission(client: AsyncClient, auth_token_user: str):
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+async def test_create_proveedor_no_permission(client: AsyncClient, auth_token_usuario_regular: str):
+    """
+    Verifica que un usuario sin el permiso 'administrar_catalogos' no puede crear un proveedor.
+    """
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     
     # CORRECCIÓN: Se envuelve la URL en HttpUrl
     prov_schema = ProveedorCreate(
@@ -50,6 +53,8 @@ async def test_create_proveedor_no_permission(client: AsyncClient, auth_token_us
     )
     data = jsonable_encoder(prov_schema)
     response = await client.post(f"{settings.API_V1_STR}/proveedores/", headers=headers, json=data)
+
+    # Un usuario regular no tiene permiso para 'administrar_catalogos'
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 async def test_create_proveedor_duplicate_name(client: AsyncClient, auth_token_admin: str, test_proveedor: Proveedor):

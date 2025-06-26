@@ -14,7 +14,7 @@ from app.models.backup_log import BackupLog as BackupLogModel # Renombrar para e
 # Marcar todos los tests en este módulo para usar asyncio
 pytestmark = pytest.mark.asyncio
 
-# Asumimos fixtures: auth_token_admin (tiene 'administrar_sistema'), auth_token_user (no tiene)
+# Asumimos fixtures: auth_token_admin (tiene 'administrar_sistema'), auth_token_usuario_regular (no tiene)
 
 # --- Fixture para crear logs de backup de prueba ---
 @pytest.fixture(scope="function")
@@ -58,10 +58,10 @@ async def test_read_backup_logs_success(
     log_ids_response = {log["id"] for log in logs}
     assert log_ids_fixture.issubset(log_ids_response) # Verificar que los creados están en la respuesta
 
-async def test_read_backup_logs_no_permission(client: AsyncClient, auth_token_user: str):
+async def test_read_backup_logs_no_permission(client: AsyncClient, auth_token_usuario_regular: str):
     """Prueba listar logs de backup sin permiso."""
-    if not auth_token_user: pytest.fail("No se pudo obtener token usuario.")
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    if not auth_token_usuario_regular: pytest.fail("No se pudo obtener token usuario.")
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     response = await client.get(f"{settings.API_V1_STR}/backups/logs/", headers=headers)
     assert response.status_code == status.HTTP_403_FORBIDDEN
 

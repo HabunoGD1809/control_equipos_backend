@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy import (
     Column, String, Text, DateTime, func, ForeignKey, Date, Numeric, Index
 )
-# Importar TSVECTOR si decides mapearlo explícitamente
+
 from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
 from sqlalchemy.orm import relationship, Mapped, mapped_column, column_property
 from sqlalchemy.types import Text as TextType
@@ -48,19 +48,12 @@ class Equipo(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    # --- texto_busqueda: Gestionado por trigger en DB, no mapear directamente para escritura ---
-    # Opción 1: Quitar el Mapped completamente si no lo lees/usas en la app.
-    # Opción 2: Mapearlo con tipo correcto pero gestionarlo diferente (más complejo).
-    texto_busqueda = column_property(Column(TSVECTOR)) # Mapeo solo lectura con tipo correcto
-
+    texto_busqueda = column_property(Column(TSVECTOR, name="texto_busqueda"), deferred=True)
 
     estado: Mapped["EstadoEquipo"] = relationship("EstadoEquipo", back_populates="equipos", lazy="selectin")
     proveedor: Mapped[Optional["Proveedor"]] = relationship("Proveedor", back_populates="equipos_suministrados", lazy="selectin")
     movimientos: Mapped[List["Movimiento"]] = relationship(
-        "Movimiento",
-        back_populates="equipo",
-        lazy="selectin",
-        cascade="all, delete-orphan"
+        "Movimiento", back_populates="equipo", lazy="selectin", cascade="all, delete-orphan"
     )
     documentos: Mapped[List["Documentacion"]] = relationship(
         "Documentacion",

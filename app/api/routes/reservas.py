@@ -47,7 +47,7 @@ def create_reserva(
         db.commit()
         db.refresh(reserva)
         # Refrescar relaciones anidadas para que se muestren en la respuesta JSON
-        db.refresh(reserva, attribute_names=['equipo', 'usuario_solicitante'])
+        db.refresh(reserva, attribute_names=['equipo', 'solicitante'])
         logger.info(f"Reserva ID {reserva.id} creada exitosamente.")
         return reserva
     except HTTPException as http_exc:
@@ -57,7 +57,8 @@ def create_reserva(
     except IntegrityError as e:
         db.rollback()
         error_detail = str(getattr(e, 'orig', e))
-        if "reservas_equipo_equipo_id_periodo_reserva_excl" in error_detail.lower():
+        if "reservas_equipo_equipo_id_tstzrange_excl" in error_detail.lower():
+            logger.warning(f"Conflicto de reserva para equipo {reserva_in.equipo_id} en las fechas solicitadas.")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Conflicto de reserva: El equipo ya está reservado o no disponible en el horario solicitado.",

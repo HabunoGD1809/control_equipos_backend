@@ -55,8 +55,8 @@ async def test_read_permisos_success(client: AsyncClient, auth_token_admin: str)
     assert "ver_equipos" in nombres_permisos
     assert "administrar_usuarios" in nombres_permisos
 
-async def test_read_permisos_no_permission(client: AsyncClient, auth_token_user: str):
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+async def test_read_permisos_no_permission(client: AsyncClient, auth_token_usuario_regular: str):
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     response = await client.get(f"{settings.API_V1_STR}/gestion/permisos/", headers=headers)
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
@@ -89,16 +89,16 @@ async def test_create_rol_success(
     returned_perm_ids = {p["id"] for p in created_rol.get("permisos", [])}
     assert set(map(str, perm_ids_to_assign)) == returned_perm_ids
 
-async def test_create_rol_no_permission(client: AsyncClient, auth_token_user: str):
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+async def test_create_rol_no_permission(client: AsyncClient, auth_token_usuario_regular: str):
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     rol_schema = RolCreate(nombre=f"RolForbidden_{uuid4().hex[:6]}", descripcion="Test", permiso_ids=[])
     data = jsonable_encoder(rol_schema)
     response = await client.post(f"{settings.API_V1_STR}/gestion/roles/", headers=headers, json=data)
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
-async def test_create_rol_duplicate_name(client: AsyncClient, auth_token_admin: str, test_rol_usuario: Rol):
+async def test_create_rol_duplicate_name(client: AsyncClient, auth_token_admin: str, test_rol_usuario_regular: Rol):
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
-    rol_schema = RolCreate(nombre=test_rol_usuario.nombre, descripcion="Duplicado", permiso_ids=[])
+    rol_schema = RolCreate(nombre=test_rol_usuario_regular.nombre, descripcion="Duplicado", permiso_ids=[])
     data = jsonable_encoder(rol_schema)
     response = await client.post(f"{settings.API_V1_STR}/gestion/roles/", headers=headers, json=data)
     assert response.status_code == status.HTTP_409_CONFLICT
@@ -117,13 +117,13 @@ async def test_create_rol_invalid_permission_id(client: AsyncClient, auth_token_
     assert response.status_code == status.HTTP_404_NOT_FOUND
     assert f"permiso con id {invalid_perm_id} no encontrado" in response.json()["detail"].lower()
 
-async def test_read_roles_success(client: AsyncClient, auth_token_admin: str, test_rol_usuario: Rol):
+async def test_read_roles_success(client: AsyncClient, auth_token_admin: str, test_rol_usuario_regular: Rol):
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
     response = await client.get(f"{settings.API_V1_STR}/gestion/roles/", headers=headers)
     assert response.status_code == status.HTTP_200_OK
     roles = response.json()
     assert isinstance(roles, list)
-    assert any(r["id"] == str(test_rol_usuario.id) for r in roles)
+    assert any(r["id"] == str(test_rol_usuario_regular.id) for r in roles)
     assert any(r["nombre"] == "admin" for r in roles)
 
 async def test_read_roles_permission_ok_for_user_admin(client: AsyncClient, auth_token_supervisor: str):
@@ -132,8 +132,8 @@ async def test_read_roles_permission_ok_for_user_admin(client: AsyncClient, auth
     assert response.status_code == status.HTTP_200_OK, f"Supervisor debería poder ver roles"
     assert isinstance(response.json(), list)
 
-async def test_read_roles_no_permission(client: AsyncClient, auth_token_user: str):
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+async def test_read_roles_no_permission(client: AsyncClient, auth_token_usuario_regular: str):
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     response = await client.get(f"{settings.API_V1_STR}/gestion/roles/", headers=headers)
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
@@ -209,9 +209,9 @@ async def test_update_rol_remove_all_permissions(client: AsyncClient, auth_token
     assert updated_rol["id"] == str(target_rol.id)
     assert len(updated_rol.get("permisos", [])) == 0
 
-async def test_update_rol_no_permission(client: AsyncClient, auth_token_user: str, create_test_rol: Rol):
+async def test_update_rol_no_permission(client: AsyncClient, auth_token_usuario_regular: str, create_test_rol: Rol):
     target_rol = create_test_rol
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     
     # CORRECCIÓN: Se añaden todos los campos obligatorios
     update_schema = RolUpdate(
@@ -248,9 +248,9 @@ async def test_delete_rol_success(client: AsyncClient, auth_token_admin: str, cr
     get_response = await client.get(f"{settings.API_V1_STR}/gestion/roles/{target_rol.id}", headers=headers)
     assert get_response.status_code == status.HTTP_404_NOT_FOUND
 
-async def test_delete_rol_no_permission(client: AsyncClient, auth_token_user: str, create_test_rol: Rol):
+async def test_delete_rol_no_permission(client: AsyncClient, auth_token_usuario_regular: str, create_test_rol: Rol):
     target_rol = create_test_rol
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     delete_response = await client.delete(f"{settings.API_V1_STR}/gestion/roles/{target_rol.id}", headers=headers)
     assert delete_response.status_code == status.HTTP_403_FORBIDDEN
 

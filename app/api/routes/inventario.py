@@ -173,26 +173,20 @@ def delete_tipo_item_inventario(
         db.commit()
         logger.info(f"Tipo de item '{nombre_tipo_log}' (ID: {tipo_id}) eliminado exitosamente.")
         return {"msg": f"Tipo de item '{nombre_tipo_log}' eliminado."}
-    except HTTPException as http_exc:
-        logger.warning(f"Error HTTP al eliminar tipo de item ID {tipo_id}: {http_exc.detail}")
-        raise http_exc
     except IntegrityError as e:
         db.rollback()
         error_detail = str(getattr(e, 'orig', e))
         logger.error(f"Error de integridad al eliminar tipo item '{nombre_tipo_log}' (ID: {tipo_id}): {error_detail}", exc_info=True)
         if "violates foreign key constraint" in error_detail.lower():
-            if "inventario_stock_tipo_item_id_fkey" in error_detail.lower():
-                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede eliminar el tipo '{nombre_tipo_log}': tiene stock asociado.")
-            elif "inventario_movimientos_tipo_item_id_fkey" in error_detail.lower():
-                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede eliminar el tipo '{nombre_tipo_log}': tiene movimientos de inventario asociados.")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede eliminar el tipo '{nombre_tipo_log}' porque tiene stock o movimientos asociados.")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No se puede eliminar el tipo de item debido a referencias existentes.")
     except Exception as e:
         db.rollback()
         logger.error(f"Error inesperado eliminando tipo item '{nombre_tipo_log}' (ID: {tipo_id}): {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al eliminar el tipo de item.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor.")
 
 # ==============================================================================
-# Endpoints para STOCK DE INVENTARIO (Consulta y Actualización Menor de Detalles)
+# Endpoints para STOCK DE INVENTARIO
 # ==============================================================================
 @router.get("/stock/",
             response_model=List[InventarioStock],
@@ -204,24 +198,26 @@ def read_inventario_stock(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=200),
     ubicacion: Optional[str] = Query(None, description="Filtrar por ubicación específica"),
+    # ===== INICIO CORRECCIÓN =====
+    lote: Optional[str] = Query(None, description="Filtrar por lote específico"),
+    # ===== FIN CORRECCIÓN =====
     tipo_item_id: Optional[PyUUID] = Query(None, description="Filtrar por ID de tipo de item"),
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
-    logger.info(f"Usuario '{current_user.nombre_usuario}' consultando stock.")
-    if tipo_item_id and ubicacion:
-        logger.debug(f"Consultando stock para TipoItem ID: {tipo_item_id} Y Ubicación: '{ubicacion}'.")
-        stock_record = inventario_stock_service.get_stock_record(db, tipo_item_id=tipo_item_id, ubicacion=ubicacion)
-        return [stock_record] if stock_record else []
-    elif tipo_item_id:
-        logger.debug(f"Consultando stock para TipoItem ID: {tipo_item_id}.")
-        return inventario_stock_service.get_stock_by_item(db, tipo_item_id=tipo_item_id, skip=skip, limit=limit)
-    elif ubicacion:
-        logger.debug(f"Consultando stock para Ubicación: '{ubicacion}'.")
-        return inventario_stock_service.get_stock_by_location(db, ubicacion=ubicacion, skip=skip, limit=limit)
-    else:
-        logger.debug("Consultando todo el stock (con paginación).")
-        return inventario_stock_service.get_multi(db, skip=skip, limit=limit)
-
+    logger.info(f"Usuario '{current_user.nombre_usuario}' consultando stock con filtros: ubicacion='{ubicacion}', lote='{lote}', tipo_item_id='{tipo_item_id}'.")
+    
+    # ===== INICIO CORRECCIÓN =====
+    # Modificar la lógica para manejar el filtro por lote correctamente
+    stock_records = inventario_stock_service.get_multi_by_filters(
+        db,
+        tipo_item_id=tipo_item_id,
+        ubicacion=ubicacion,
+        lote=lote,
+        skip=skip,
+        limit=limit
+    )
+    return stock_records
+    # ===== FIN CORRECCIÓN =====
 
 @router.get("/stock/item/{tipo_item_id}/total",
             response_model=InventarioStockTotal,

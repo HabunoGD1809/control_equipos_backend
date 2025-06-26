@@ -164,11 +164,11 @@ async def test_create_mantenimiento_calcula_proximo(
     assert abs(fecha_proximo_recibida - fecha_esperada_proximo) < timedelta(seconds=1)
 
 async def test_create_mantenimiento_no_permission(
-    client: AsyncClient, auth_token_user: str,
+    client: AsyncClient, auth_token_usuario_regular: str,
     equipo_para_mantenimiento: Equipo,
     tipo_mantenimiento_correctivo: TipoMantenimiento
 ):
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     
     mant_schema = MantenimientoCreate(
         equipo_id=equipo_para_mantenimiento.id,

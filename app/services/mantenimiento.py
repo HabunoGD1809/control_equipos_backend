@@ -148,15 +148,47 @@ class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, Mante
             .offset(skip)
             .limit(limit)
         )
-        # La query original era un poco compleja con OR, simplificada con COALESCE y filtrado de estados no finales.
-        # Ajustar la lógica de filtrado de fechas si es necesario para que coincida exactamente con el requisito.
-        # Esta query ahora busca mantenimientos no completados/cancelados cuya fecha programada O próxima fecha de preventivo
-        # caiga dentro del rango.
         result = db.execute(statement)
         return list(result.scalars().all())
     
     # El método remove es heredado de BaseService y ya no hace commit.
     # Si se necesitara lógica específica antes de eliminar un mantenimiento (ej. verificar si tiene documentos asociados
     # y qué hacer con ellos), se debería sobreescribir remove aquí.
+    
+    def get_multi_with_filters(
+        self,
+        db: Session,
+        *,
+        skip: int = 0,
+        limit: int = 100,
+        equipo_id: Optional[UUID] = None,
+        estado: Optional[str] = None,
+        tipo_mantenimiento_id: Optional[UUID] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None
+    ) -> List[Mantenimiento]:
+        """
+        Obtiene una lista de mantenimientos aplicando filtros dinámicos.
+        """
+        statement = select(self.model)
+
+        if equipo_id:
+            statement = statement.where(self.model.equipo_id == equipo_id)
+        if estado:
+            statement = statement.where(self.model.estado == estado)
+        if tipo_mantenimiento_id:
+            statement = statement.where(self.model.tipo_mantenimiento_id == tipo_mantenimiento_id)
+        
+        # Filtrado por rango de fechas en 'fecha_programada'
+        if start_date:
+            statement = statement.where(self.model.fecha_programada >= start_date)
+        if end_date:
+            statement = statement.where(self.model.fecha_programada <= end_date)
+
+        statement = statement.order_by(self.model.fecha_programada.desc().nullslast(), self.model.created_at.desc()) # type: ignore
+        statement = statement.offset(skip).limit(limit)
+        
+        result = db.execute(statement)
+        return list(result.scalars().all())
 
 mantenimiento_service = MantenimientoService(Mantenimiento)

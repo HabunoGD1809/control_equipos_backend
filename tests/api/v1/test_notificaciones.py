@@ -15,13 +15,13 @@ from sqlalchemy.orm import Session
 # Marcar todos los tests en este módulo para usar asyncio
 pytestmark = pytest.mark.asyncio
 
-# Asumimos fixtures: test_user, auth_token_user, test_notificacion_user
+# Asumimos fixtures: test_usuario_regular_fixture, auth_token_usuario_regular, test_notificacion_user
 
 async def test_read_notificaciones_success(
-    client: AsyncClient, auth_token_user: str, test_notificacion_user: Notificacion
+    client: AsyncClient, auth_token_usuario_regular: str, test_notificacion_user: Notificacion
 ):
     """Prueba listar las notificaciones del usuario actual."""
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     response = await client.get(f"{settings.API_V1_STR}/notificaciones/", headers=headers)
     assert response.status_code == status.HTTP_200_OK
     notificaciones = response.json()
@@ -31,10 +31,10 @@ async def test_read_notificaciones_success(
     # Verificar que todas son del usuario actual (implícito por la consulta)
 
 async def test_read_notificaciones_solo_no_leidas(
-    client: AsyncClient, auth_token_user: str, test_notificacion_user: Notificacion, db: Session
+    client: AsyncClient, auth_token_usuario_regular: str, test_notificacion_user: Notificacion, db: Session
 ):
     """Prueba listar solo notificaciones no leídas."""
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     # Crear una notificación leída adicional para el mismo usuario
     notif_leida = Notificacion(usuario_id=test_notificacion_user.usuario_id, mensaje="Notif Leida", leido=True)
     db.add(notif_leida); db.flush(); db.refresh(notif_leida)
@@ -51,10 +51,10 @@ async def test_read_notificaciones_solo_no_leidas(
     assert all(n["leido"] is False for n in notificaciones)
 
 async def test_read_unread_count_success(
-    client: AsyncClient, auth_token_user: str, test_notificacion_user: Notificacion, db: Session
+    client: AsyncClient, auth_token_usuario_regular: str, test_notificacion_user: Notificacion, db: Session
 ):
     """Prueba contar notificaciones no leídas."""
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     # Añadir otra no leída
     notif_no_leida2 = Notificacion(usuario_id=test_notificacion_user.usuario_id, mensaje="Otra no leida", leido=False)
     db.add(notif_no_leida2); db.flush()
@@ -67,10 +67,10 @@ async def test_read_unread_count_success(
     assert count_data["unread_count"] >= 2
 
 async def test_mark_notification_read_success(
-    client: AsyncClient, auth_token_user: str, test_notificacion_user: Notificacion
+    client: AsyncClient, auth_token_usuario_regular: str, test_notificacion_user: Notificacion
 ):
     """Prueba marcar una notificación como leída."""
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     notif_id = test_notificacion_user.id
     assert test_notificacion_user.leido is False # Verificar estado inicial
 
@@ -85,10 +85,10 @@ async def test_mark_notification_read_success(
     assert updated_notif["fecha_leido"] is not None
 
 async def test_mark_notification_unread_success(
-    client: AsyncClient, auth_token_user: str, test_notificacion_user: Notificacion, db: Session
+    client: AsyncClient, auth_token_usuario_regular: str, test_notificacion_user: Notificacion, db: Session
 ):
     """Prueba marcar una notificación leída como no leída."""
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     notif_id = test_notificacion_user.id
     # Marcarla como leída primero
     test_notificacion_user.leido = True; test_notificacion_user.fecha_leido = datetime.now(timezone.utc)
@@ -118,12 +118,12 @@ async def test_mark_notification_other_user_fail(
     assert response.status_code == status.HTTP_403_FORBIDDEN
 
 async def test_mark_all_as_read_success(
-    client: AsyncClient, auth_token_user: str, test_notificacion_user: Notificacion, db: Session, test_user: Usuario
+    client: AsyncClient, auth_token_usuario_regular: str, test_notificacion_user: Notificacion, db: Session, test_usuario_regular_fixture: Usuario
 ):
     """Prueba marcar todas las notificaciones como leídas."""
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     # Crear otra no leída
-    notif_no_leida2 = Notificacion(usuario_id=test_user.id, mensaje="Marcar Todas", leido=False)
+    notif_no_leida2 = Notificacion(usuario_id=test_usuario_regular_fixture.id, mensaje="Marcar Todas", leido=False)
     db.add(notif_no_leida2); db.flush()
 
     # Verificar que hay al menos 2 no leídas
@@ -141,10 +141,10 @@ async def test_mark_all_as_read_success(
     assert count_resp_after.json()["unread_count"] == 0
 
 async def test_delete_notification_success(
-    client: AsyncClient, auth_token_user: str, test_notificacion_user: Notificacion
+    client: AsyncClient, auth_token_usuario_regular: str, test_notificacion_user: Notificacion
 ):
     """Prueba eliminar una notificación propia."""
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     notif_id = test_notificacion_user.id
 
     delete_response = await client.delete(f"{settings.API_V1_STR}/notificaciones/{notif_id}", headers=headers)

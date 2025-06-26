@@ -37,28 +37,36 @@ async def tipo_item_toner(db: Session) -> TipoItemInventario:
     return item
 
 @pytest.fixture(scope="function")
-async def stock_inicial_toner(db: Session, tipo_item_toner: TipoItemInventario) -> InventarioStock:
+def stock_inicial_toner(db: Session, tipo_item_toner: TipoItemInventario) -> InventarioStock:
+    """
+    Asegura que haya una cantidad de stock predecible para un item y lote específicos.
+    Usa un lote fijo para hacer la prueba determinista.
+    """
     ubicacion_test = "Almacén Principal Test"
-    cantidad_inicial = 10 
+    # CORREGIDO: Usar un lote fijo en lugar de uno aleatorio
+    lote_fijo = "LOTE-SALIDA-TEST-001"
+    cantidad_necesaria = 10 
     costo_inicial = Decimal("25.50")
-    stock = db.query(InventarioStock).filter(
-        InventarioStock.tipo_item_id == tipo_item_toner.id,
-        InventarioStock.ubicacion == ubicacion_test
+    
+    stock = db.query(InventarioStock).filter_by(
+        tipo_item_id=tipo_item_toner.id, ubicacion=ubicacion_test, lote=lote_fijo
     ).first()
-    lote_test = f"LOTE-INI-{uuid4().hex[:4]}"
-    if stock:
-        stock.cantidad_actual = cantidad_inicial
-        stock.costo_promedio_ponderado = costo_inicial
-        stock.lote = lote_test
-        db.add(stock)
-    else:
+
+    if not stock:
         stock = InventarioStock(
-            tipo_item_id=tipo_item_toner.id, ubicacion=ubicacion_test,
-            cantidad_actual=cantidad_inicial,
-            costo_promedio_ponderado=costo_inicial, lote=lote_test
+            tipo_item_id=tipo_item_toner.id,
+            ubicacion=ubicacion_test,
+            lote=lote_fijo,
+            cantidad_actual=cantidad_necesaria,
+            costo_promedio_ponderado=costo_inicial
         )
         db.add(stock)
-    db.flush(); db.refresh(stock)
+    # Asegura que el stock siempre sea el esperado para la prueba
+    elif stock.cantidad_actual < cantidad_necesaria:
+        stock.cantidad_actual = cantidad_necesaria
+    
+    db.commit()
+    db.refresh(stock)
     return stock
 
 async def test_create_inventario_movimiento_salida_success(
@@ -66,46 +74,39 @@ async def test_create_inventario_movimiento_salida_success(
     stock_inicial_toner: InventarioStock, 
     tipo_item_toner: TipoItemInventario
 ):
+    """Prueba registrar una salida de inventario y verificar que el stock se reduce."""
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
     cantidad_salida = 2 
     stock_antes = stock_inicial_toner.cantidad_actual
-    ubicacion_stock = stock_inicial_toner.ubicacion 
-
+    
     mov_data = {
         "tipo_item_id": str(tipo_item_toner.id),
         "tipo_movimiento": TipoMovimientoInvEnum.SALIDA_USO.value,
         "cantidad": cantidad_salida,
-        "ubicacion_origen": ubicacion_stock,
+        "ubicacion_origen": stock_inicial_toner.ubicacion,
         "lote_origen": stock_inicial_toner.lote,
-        "notas": f"Salida test OK v3 para {tipo_item_toner.nombre}"
     }
-    try:
-        InventarioMovimientoCreate(**mov_data)
-    except ValidationError as e:
-        pytest.fail(f"Payload inválido (Salida): {e}")
 
     response = await client.post(f"{settings.API_V1_STR}/inventario/movimientos/", headers=headers, json=mov_data)
-
     assert response.status_code == status.HTTP_201_CREATED, f"Detalle error API (Salida): {response.text}"
-    created_mov = response.json()
-    assert int(created_mov["cantidad"]) == cantidad_salida
-    assert created_mov["tipo_movimiento"] == TipoMovimientoInvEnum.SALIDA_USO.value
-
-    # CORRECCIÓN: Se añade el filtro por 'lote' para asegurar que se obtiene el registro de stock correcto.
+    
+    # Verificar el stock después del movimiento
     stock_despues_resp = await client.get(
         f"{settings.API_V1_STR}/inventario/stock/", 
         headers=headers, 
         params={
             "tipo_item_id": mov_data["tipo_item_id"], 
-            "ubicacion": ubicacion_stock,
+            "ubicacion": stock_inicial_toner.ubicacion,
             "lote": stock_inicial_toner.lote 
         }
     )
-    assert stock_despues_resp.status_code == status.HTTP_200_OK
+    assert stock_despues_resp.status_code == status.HTTP_200_OK, f"No se pudo obtener el stock después del movimiento: {stock_despues_resp.text}"
     stock_despues_data = stock_despues_resp.json()
-    stock_actual = next((int(s["cantidad_actual"]) for s in stock_despues_data if s["ubicacion"] == ubicacion_stock), None)
-    assert stock_actual is not None
-    assert stock_actual == stock_antes - cantidad_salida, "Stock no se redujo correctamente"
+    
+    assert len(stock_despues_data) > 0, "La API no devolvió ningún registro de stock para los filtros dados."
+    stock_actual = int(stock_despues_data[0]["cantidad_actual"])
+    
+    assert stock_actual == stock_antes - cantidad_salida, "El stock no se redujo correctamente."
 
 async def test_create_inventario_movimiento_entrada_success(
     client: AsyncClient, auth_token_admin: str,

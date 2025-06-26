@@ -2,15 +2,12 @@ import pytest
 from httpx import AsyncClient
 from uuid import uuid4, UUID as PyUUID
 from fastapi.encoders import jsonable_encoder
-from pydantic import ValidationError
 from decimal import Decimal
 
 from app.core.config import settings
 from app.models.equipo import Equipo
 from app.models.estado_equipo import EstadoEquipo
-from app.schemas.equipo import EquipoCreate, EquipoUpdate
-from app.schemas.equipo_componente import EquipoComponenteBodyCreate
-
+from app.schemas.equipo import EquipoCreate
 from fastapi import status
 from datetime import date
 
@@ -82,7 +79,8 @@ async def test_add_componente_success(
     componente_payload = {
         "equipo_componente_id": str(componente_a_anadir_id),
         "cantidad": 2,
-        "tipo_relacion": "Instalado en",
+        # CORREGIDO: Se cambia "Instalado en" por un valor válido de la constraint CHECK
+        "tipo_relacion": "componente",
         "notas": "RAM 2x añadida en test de éxito"
     }
     response = await client.post(
@@ -94,6 +92,7 @@ async def test_add_componente_success(
     relacion_creada = response.json()
     assert relacion_creada["equipo_padre_id"] == str(equipo_padre_id)
     assert relacion_creada["equipo_componente_id"] == str(componente_a_anadir_id)
+    assert relacion_creada["tipo_relacion"] == "componente"
 
 async def test_add_componente_ciclico(
     client: AsyncClient, auth_token_supervisor: str,
@@ -120,9 +119,10 @@ async def test_add_componente_ciclico(
 # --- Otros Tests de Equipos (CRUD, permisos, etc.) ---
 
 async def test_create_equipo_no_permission(
-    client: AsyncClient, auth_token_user: str, test_estado_disponible: EstadoEquipo
+    client: AsyncClient, auth_token_usuario_regular: str, test_estado_disponible: EstadoEquipo
 ):
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+    # CORREGIDO: Se usa auth_token_usuario_regular
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     serie = generate_valid_serie("NOPERM")
     equipo_schema = EquipoCreate(
         nombre=f"Equipo Test NoPerm {serie}", 
@@ -174,8 +174,9 @@ async def test_create_equipo_duplicate_serie(
     assert "número de serie ya registrado" in response2.json()["detail"].lower()
 
 
-async def test_read_equipos(client: AsyncClient, auth_token_user: str):
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+async def test_read_equipos(client: AsyncClient, auth_token_usuario_regular: str):
+    # CORREGIDO: Se usa auth_token_usuario_regular
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     response = await client.get(f"{settings.API_V1_STR}/equipos/", headers=headers)
     assert response.status_code == status.HTTP_200_OK, f"Detalle: {response.text}"
     assert isinstance(response.json(), list)
@@ -259,3 +260,4 @@ async def test_delete_equipo(
 
     get_response = await client.get(f"{settings.API_V1_STR}/equipos/{equipo_id}", headers=headers)
     assert get_response.status_code == status.HTTP_404_NOT_FOUND
+

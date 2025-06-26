@@ -114,8 +114,6 @@ async def test_create_licencia_success(client: AsyncClient, auth_token_admin: st
     assert created_lic["cantidad_disponible"] == 1
     assert "id" in created_lic
 
-# (El resto del archivo no tenía los errores indicados, por lo que se mantiene igual)
-
 async def test_create_software_catalogo_success(client: AsyncClient, auth_token_admin: str):
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
     sw_name = f"Software Test {uuid4().hex[:6]}"
@@ -132,8 +130,8 @@ async def test_create_software_catalogo_success(client: AsyncClient, auth_token_
     assert created_sw["version"] == "1.0"
     assert "id" in created_sw
 
-async def test_read_software_catalogo_success(client: AsyncClient, auth_token_user: str, software_office: SoftwareCatalogo):
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+async def test_read_software_catalogo_success(client: AsyncClient, auth_token_usuario_regular: str, software_office: SoftwareCatalogo):
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     response = await client.get(f"{settings.API_V1_STR}/licencias/catalogo/", headers=headers)
     assert response.status_code == status.HTTP_200_OK
     catalogo = response.json()
@@ -141,8 +139,8 @@ async def test_read_software_catalogo_success(client: AsyncClient, auth_token_us
     assert len(catalogo) > 0
     assert any(sw["id"] == str(software_office.id) for sw in catalogo)
 
-async def test_read_licencias_success(client: AsyncClient, auth_token_user: str, licencia_office_disponible: LicenciaSoftware):
-    headers = {"Authorization": f"Bearer {auth_token_user}"}
+async def test_read_licencias_success(client: AsyncClient, auth_token_usuario_regular: str, licencia_office_disponible: LicenciaSoftware):
+    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     response = await client.get(f"{settings.API_V1_STR}/licencias/", headers=headers)
     assert response.status_code == status.HTTP_200_OK
     licencias = response.json()
@@ -203,12 +201,12 @@ async def test_create_asignacion_equipo_success(
 async def test_create_asignacion_usuario_success(
     client: AsyncClient, auth_token_admin: str,
     licencia_office_disponible: LicenciaSoftware,
-    test_user: Usuario,
+    test_usuario_regular_fixture: Usuario,
     db: Session
 ):
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
     lic_id = licencia_office_disponible.id
-    user_id = test_user.id
+    user_id = test_usuario_regular_fixture.id
     
     db.refresh(licencia_office_disponible)
     disponibles_antes = licencia_office_disponible.cantidad_disponible
@@ -287,7 +285,7 @@ async def test_create_asignacion_duplicada_equipo(
     assert "ya está asignada a este equipo" in response2.json()["detail"].lower()
 
 async def test_read_asignaciones_success(
-    client: AsyncClient, auth_token_user: str,
+    client: AsyncClient, auth_token_usuario_regular: str,
     licencia_office_disponible: LicenciaSoftware,
     equipo_sin_licencia: Equipo,
     auth_token_admin: str,
@@ -307,7 +305,7 @@ async def test_read_asignaciones_success(
         data = jsonable_encoder(asign_schema)
         await client.post(f"{settings.API_V1_STR}/licencias/asignaciones/", headers=headers_admin, json=data)
 
-    headers_user = {"Authorization": f"Bearer {auth_token_user}"}
+    headers_user = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     response = await client.get(f"{settings.API_V1_STR}/licencias/asignaciones/", headers=headers_user)
     assert response.status_code == status.HTTP_200_OK
     asignaciones = response.json()

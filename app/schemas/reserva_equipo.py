@@ -13,7 +13,8 @@ class ReservaEquipoBase(BaseModel):
     fecha_hora_inicio: datetime = Field(..., description="Fecha y hora de inicio de la reserva")
     fecha_hora_fin: datetime = Field(..., description="Fecha y hora de fin de la reserva")
     proposito: str = Field(..., description="Propósito o motivo de la reserva")
-    notas_solicitante: Optional[str] = Field(None, description="Notas adicionales del solicitante")
+    # CORRECCIÓN CLAVE: El campo se llama 'notas' para coincidir con el modelo.
+    notas: Optional[str] = Field(None, description="Notas adicionales del solicitante")
 
 class ReservaEquipoCreate(ReservaEquipoBase):
     pass
@@ -22,7 +23,8 @@ class ReservaEquipoUpdate(BaseModel):
     fecha_hora_inicio: Optional[datetime] = None
     fecha_hora_fin: Optional[datetime] = None
     proposito: Optional[str] = None
-    notas_solicitante: Optional[str] = None
+    # CORRECCIÓN: Se usa 'notas' para consistencia.
+    notas: Optional[str] = None
 
 class ReservaEquipoUpdateEstado(BaseModel):
     estado: EstadoReservaEnum = Field(..., description="Nuevo estado para la reserva")
@@ -45,17 +47,20 @@ class ReservaEquipoInDBBase(ReservaEquipoBase):
     id: uuid.UUID
     usuario_solicitante_id: uuid.UUID
     estado: EstadoReservaEnum
-    aprobado_por_id: Optional[uuid.UUID]
-    fecha_aprobacion: Optional[datetime]
-    check_in_time: Optional[datetime]
-    check_out_time: Optional[datetime]
-    notas_administrador: Optional[str]
-    notas_devolucion: Optional[str]
+    aprobado_por_id: Optional[uuid.UUID] = None
+    fecha_aprobacion: Optional[datetime] = None
+    check_in_time: Optional[datetime] = None
+    check_out_time: Optional[datetime] = None
+    notas_administrador: Optional[str] = None
+    notas_devolucion: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    model_config = { "from_attributes": True }
+
+    class Config:
+        from_attributes = True
 
 class ReservaEquipo(ReservaEquipoInDBBase):
     equipo: EquipoSimple
-    usuario_solicitante: UsuarioSimple
+    # CORRECCIÓN: El nombre de la relación coincide con el modelo
+    solicitante: UsuarioSimple
     aprobado_por: Optional[UsuarioSimple] = None

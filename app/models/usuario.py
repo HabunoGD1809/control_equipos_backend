@@ -3,10 +3,11 @@ import uuid
 from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import (
-    Column, String, Text, DateTime, func, ForeignKey, Integer, Boolean
+    DateTime, ForeignKey, Integer, Boolean, String
 )
-from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship, Mapped, mapped_column
+from sqlalchemy.sql import func
 
 from app.db.base import Base
 
@@ -23,14 +24,14 @@ if TYPE_CHECKING:
 
 class Usuario(Base):
     """
-    Modelo ORM para la tabla 'usuarios'. 
+    Modelo ORM para la tabla 'usuarios'.
     """
     __tablename__ = "usuarios"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nombre_usuario: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     hashed_password: Mapped[str] = mapped_column("contrasena", String)
-    rol_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("roles.id"), index=True) 
+    rol_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("roles.id"), index=True)
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True, index=True)
     token_temporal: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     token_expiracion: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -38,7 +39,9 @@ class Usuario(Base):
     bloqueado: Mapped[bool] = mapped_column(Boolean, default=False)
     ultimo_login: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-    updated_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     requiere_cambio_contrasena: Mapped[bool] = mapped_column(Boolean, default=True)
 
     rol: Mapped["Rol"] = relationship("Rol", back_populates="usuarios", lazy="selectin")
@@ -88,14 +91,14 @@ class Usuario(Base):
     reservas_solicitadas: Mapped[List["ReservaEquipo"]] = relationship(
         "ReservaEquipo",
         foreign_keys="ReservaEquipo.usuario_solicitante_id",
-        back_populates="usuario_solicitante",
+        back_populates="solicitante", 
         lazy="selectin",
         cascade="all, delete-orphan"
     )
     reservas_aprobadas: Mapped[List["ReservaEquipo"]] = relationship(
         "ReservaEquipo",
         foreign_keys="ReservaEquipo.aprobado_por_id",
-        back_populates="aprobado_por_usuario",
+        back_populates="aprobado_por",
         lazy="selectin"
     )
     movimientos_inventario_registrados: Mapped[List["InventarioMovimiento"]] = relationship(

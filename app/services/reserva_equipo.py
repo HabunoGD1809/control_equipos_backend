@@ -14,10 +14,9 @@ EXCLUSION_VIOLATION_PGCODE = "23P01"
 from app.models.reserva_equipo import ReservaEquipo
 from app.models.usuario import Usuario
 from app.schemas.reserva_equipo import (
-    ReservaEquipoCreate, ReservaEquipoUpdate, ReservaEquipoUpdateEstado, 
+    ReservaEquipoCreate, ReservaEquipoUpdate, ReservaEquipoUpdateEstado,
     ReservaEquipoCheckInOut
 )
-# CORRECCIÓN: Importar el Enum directamente para usarlo
 from app.schemas.enums import EstadoReservaEnum
 
 # Importar la clase base y otros servicios necesarios
@@ -84,7 +83,7 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         logger.debug(f"Intentando actualizar reserva ID {reserva_id} con datos: {update_data}")
         
         estados_no_modificables = [
-            EstadoReservaEnum.COMPLETADA.value, 
+            EstadoReservaEnum.FINALIZADA.value,
             EstadoReservaEnum.CANCELADA_USUARIO.value,
             EstadoReservaEnum.RECHAZADA.value
         ]
@@ -148,8 +147,8 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
             logger.info(f"Estado de reserva ID {reserva_id} ya es '{nuevo_estado.value}'. No se realizan cambios.")
             return db_obj
 
-        if db_obj.estado == EstadoReservaEnum.COMPLETADA.value and nuevo_estado != EstadoReservaEnum.COMPLETADA:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No se puede cambiar el estado de una reserva ya completada.")
+        if db_obj.estado == EstadoReservaEnum.FINALIZADA.value and nuevo_estado != EstadoReservaEnum.FINALIZADA:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No se puede cambiar el estado de una reserva ya finalizada.")
         
         if db_obj.estado == EstadoReservaEnum.CANCELADA_USUARIO.value and nuevo_estado != EstadoReservaEnum.CANCELADA_USUARIO:
              raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No se puede cambiar el estado de una reserva ya cancelada.")
@@ -206,7 +205,7 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
                   raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esta reserva ya tiene un check-out registrado.")
 
               update_payload["check_out_time"] = check_data.check_out_time
-              update_payload["estado"] = EstadoReservaEnum.COMPLETADA.value
+              update_payload["estado"] = EstadoReservaEnum.FINALIZADA.value
               if check_data.notas_devolucion is not None:
                   update_payload["notas_devolucion"] = check_data.notas_devolucion
         else:
@@ -228,8 +227,6 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         
         existing_reservation_range = sql_func.tstzrange(self.model.fecha_hora_inicio, self.model.fecha_hora_fin, '()')
         
-        # CORRECCIÓN: Usar sql_func.tstzrange para construir el rango a partir de las variables.
-        # Esto genera la función de PostgreSQL en la consulta, que es la forma correcta.
         new_reservation_range = sql_func.tstzrange(start_time, end_time, '()')
 
         statement = select(self.model).where(

@@ -8,6 +8,7 @@ from decimal import Decimal
 import json
 import logging
 
+import httpx
 from fastapi import FastAPI
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine, text, select, delete
@@ -66,7 +67,8 @@ def db() -> Generator[Session, None, None]:
     finally:
         logger.debug(f"DB Session {session_identifier}: Rollback y cierre.")
         db_session.close()
-        transaction.rollback()
+        if transaction.is_active:
+            transaction.rollback()
         connection.close()
         logger.debug(f"DB Session {session_identifier}: Cerrada y rollback completado.")
 
@@ -119,13 +121,16 @@ async def get_auth_token(client: AsyncClient, username: str, password: str) -> s
         else:
              logger.error(f"No se encontró 'access_token' en la respuesta para '{username}'. Respuesta: {token_data}")
              return None
-    except Exception as e:
-        error_detail = "N/A"; status_code = "N/A"
-        if hasattr(e, 'response') and e.response is not None: # type: ignore
-            status_code = e.response.status_code # type: ignore
-            try: error_detail = e.response.json() # type: ignore
-            except json.JSONDecodeError: error_detail = e.response.text # type: ignore
+    except httpx.HTTPStatusError as e:
+        status_code = e.response.status_code
+        try:
+            error_detail = e.response.json()
+        except json.JSONDecodeError:
+            error_detail = e.response.text
         logger.error(f"FALLO al obtener token para '{username}' en get_auth_token: Status={status_code}, Error={type(e).__name__}. Detail: {error_detail}", exc_info=False)
+        return None
+    except Exception as e:
+        logger.error(f"FALLO INESPERADO al obtener token para '{username}': Error={type(e).__name__}. Detail: {e}", exc_info=True)
         return None
 
 # Contraseñas de prueba
@@ -149,7 +154,9 @@ def test_permisos_definidos(db: Session) -> Dict[str, Permiso]:
         "administrar_inventario_stock", "ver_licencias", "administrar_licencias", "asignar_licencias",
         "administrar_software_catalogo", "ver_reservas", "reservar_equipos", "aprobar_reservas",
         "administrar_usuarios", "administrar_roles", "administrar_catalogos", "generar_reportes",
-        "ver_auditoria", "configurar_sistema", "administrar_sistema", "ver_proveedores"
+        "ver_auditoria", "configurar_sistema", "administrar_sistema", "ver_proveedores",
+        "editar_movimientos"
+        # añadi editar_movimientos
     ]
     permisos_dict = {}
     try:
@@ -258,14 +265,15 @@ def _ensure_rol_with_permissions(db: Session, rol_name: str, descripcion: str, r
 
 @pytest.fixture(scope="function")
 def test_rol_admin(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    """Rol 'admin' con todos los 37 permisos."""
+    # 37 permisos
+    """Rol 'admin' con todos los permisos."""
     all_perm_names = list(test_permisos_definidos.keys())
     return _ensure_rol_with_permissions(db, "admin", "Administrador con acceso total al sistema", all_perm_names, test_permisos_definidos)
 
 @pytest.fixture(scope="function")
 def test_rol_supervisor(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    """Rol 'supervisor' con 32 permisos específicos."""
-    perm_names_req = [
+    """Rol 'supervisor' con permisos específicos."""
+    perm_names = [
         'ver_dashboard', 'ver_equipos', 'crear_equipos', 'editar_equipos', 'eliminar_equipos', 
         'gestionar_componentes', 'ver_movimientos', 'registrar_movimientos', 'autorizar_movimientos', 
         'cancelar_movimientos', 'ver_mantenimientos', 'programar_mantenimientos', 'editar_mantenimientos', 
@@ -273,53 +281,59 @@ def test_rol_supervisor(db: Session, test_permisos_definidos: Dict[str, Permiso]
         'verificar_documentos', 'eliminar_documentos', 'ver_inventario', 'administrar_inventario_tipos', 
         'administrar_inventario_stock', 'ver_licencias', 'administrar_licencias', 'asignar_licencias', 
         'administrar_software_catalogo', 'ver_reservas', 'reservar_equipos', 'aprobar_reservas', 
-        'generar_reportes', 'ver_proveedores', 'administrar_catalogos', 'administrar_usuarios'
+        'generar_reportes', 'ver_proveedores', 'administrar_catalogos', 'administrar_usuarios', 'editar_movimientos'
     ]
-    return _ensure_rol_with_permissions(db, "supervisor", "Supervisor con gestión operativa y de recursos", perm_names_req, test_permisos_definidos)
+    return _ensure_rol_with_permissions(db, "supervisor", "Supervisor con gestión operativa y de recursos", perm_names, test_permisos_definidos)
 
 @pytest.fixture(scope="function")
+    # 13 permisos
 def test_rol_usuario_regular(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    """Rol 'usuario_regular' con 13 permisos específicos."""
-    perm_names_req = [
-        'ver_dashboard', 'ver_equipos', 'ver_movimientos', 'registrar_movimientos', 
-        'ver_mantenimientos', 'programar_mantenimientos', 'ver_documentos', 'subir_documentos', 
+    """Rol 'usuario_regular' con permisos específicos."""
+    perm_names = [
+        'ver_dashboard', 'ver_equipos', 'ver_movimientos',
+        'ver_mantenimientos', 'ver_documentos', 'subir_documentos', 
         'ver_inventario', 'ver_licencias', 'ver_reservas', 'reservar_equipos', 'ver_proveedores'
     ]
-    return _ensure_rol_with_permissions(db, "usuario_regular", "Usuario Estándar para operaciones diarias y consulta", perm_names_req, test_permisos_definidos)
+    return _ensure_rol_with_permissions(db, "usuario_regular", "Usuario Estándar para operaciones diarias y consulta", perm_names, test_permisos_definidos)
 
 @pytest.fixture(scope="function")
 def test_rol_auditor(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    """Rol 'auditor' con 11 permisos específicos."""
-    perm_names_req = [
+    # 11 permisos
+    """Rol 'auditor' con permisos de solo lectura."""
+    perm_names = [
         'ver_dashboard', 'ver_equipos', 'ver_movimientos', 'ver_mantenimientos', 'ver_documentos',
         'ver_inventario', 'ver_licencias', 'ver_reservas', 'ver_proveedores', 'ver_auditoria', 'generar_reportes'
     ]
-    return _ensure_rol_with_permissions(db, "auditor", "Auditor con permisos de solo lectura y consulta", perm_names_req, test_permisos_definidos)
+    return _ensure_rol_with_permissions(db, "auditor", "Auditor con permisos de solo lectura y consulta", perm_names, test_permisos_definidos)
 
 @pytest.fixture(scope="function")
 def test_rol_tecnico(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    """Rol 'tecnico' con 14 permisos específicos."""
-    perm_names_req = [
-        'ver_dashboard', 'ver_equipos', 'gestionar_componentes', 'ver_movimientos', 'registrar_movimientos',
+    # 14 permisos
+    """Rol 'tecnico' con permisos operativos."""
+    perm_names = [
+        'ver_equipos', 'gestionar_componentes', 'ver_movimientos', 'registrar_movimientos',
         'ver_mantenimientos', 'programar_mantenimientos', 'editar_mantenimientos', 'ver_documentos',
         'subir_documentos', 'ver_inventario', 'ver_licencias', 'ver_reservas', 'ver_proveedores'
     ]
-    return _ensure_rol_with_permissions(db, "tecnico", "Técnico de Mantenimiento o Soporte", perm_names_req, test_permisos_definidos)
+    return _ensure_rol_with_permissions(db, "tecnico", "Técnico de Mantenimiento o Soporte", perm_names, test_permisos_definidos)
 
 @pytest.fixture(scope="function")
 def test_rol_tester(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    """Rol 'tester' con 33 permisos específicos."""
-    perm_names_req = [ 
+    # 33 permisos
+    """Rol 'tester' con un amplio set de permisos para pruebas funcionales."""
+    perm_names = [ 
         'ver_dashboard', 'ver_equipos', 'crear_equipos', 'editar_equipos', 'eliminar_equipos',
         'gestionar_componentes', 'ver_movimientos', 'registrar_movimientos', 'autorizar_movimientos',
-        'cancelar_movimientos', 'ver_mantenimientos', 'programar_mantenimientos', 'editar_mantenimientos',
-        'eliminar_mantenimientos', 'ver_documentos', 'subir_documentos', 'editar_documentos',
-        'verificar_documentos', 'eliminar_documentos', 'ver_inventario', 'administrar_inventario_tipos',
-        'administrar_inventario_stock', 'ver_licencias', 'administrar_licencias', 'asignar_licencias',
-        'administrar_software_catalogo', 'ver_reservas', 'reservar_equipos', 'aprobar_reservas',
-        'administrar_catalogos', 'generar_reportes', 'ver_auditoria', 'ver_proveedores'
+        'cancelar_movimientos', 'editar_movimientos', 'ver_mantenimientos', 'programar_mantenimientos',
+        'editar_mantenimientos', 'eliminar_mantenimientos', 'ver_documentos', 'subir_documentos',
+        'editar_documentos', 'verificar_documentos', 'eliminar_documentos', 'ver_inventario',
+        'administrar_inventario_tipos', 'administrar_inventario_stock', 'ver_licencias',
+        'administrar_licencias', 'asignar_licencias', 'administrar_software_catalogo',
+        'ver_reservas', 'reservar_equipos', 'aprobar_reservas', 'ver_proveedores',
+        'administrar_catalogos', 'generar_reportes', 'ver_auditoria', 'administrar_usuarios', 'administrar_roles'
     ]
-    return _ensure_rol_with_permissions(db, "tester", "Rol para pruebas funcionales y de sistema", perm_names_req, test_permisos_definidos)
+    return _ensure_rol_with_permissions(db, "tester", "Rol para pruebas funcionales y de sistema", perm_names, test_permisos_definidos)
+
 
 def _ensure_user(db: Session, username: str, password: str, rol: Rol, email: str | None = None) -> Usuario:
     logger.debug(f"Asegurando usuario '{username}' con rol '{rol.nombre}' (ID: {rol.id})")

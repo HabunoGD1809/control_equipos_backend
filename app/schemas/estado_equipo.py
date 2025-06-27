@@ -2,24 +2,36 @@ import uuid
 from typing import Optional
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
-# --- Schema Base ---
+# ===============================================================
+# Schema Base
+# ===============================================================
 class EstadoEquipoBase(BaseModel):
+    """Campos base que definen un estado de equipo."""
     nombre: str = Field(..., max_length=100, description="Nombre del estado (ej: Disponible, En Uso)")
     descripcion: Optional[str] = Field(None, description="Descripción detallada del estado")
-    permite_movimientos: bool = Field(True, description="¿Equipos en este estado pueden moverse/asignarse?")
-    requiere_autorizacion: bool = Field(False, description="¿Se requiere autorización para mover desde este estado?")
-    es_estado_final: bool = Field(False, description="¿Es un estado de fin de ciclo de vida (ej: Baja)?")
-    color_hex: Optional[str] = Field(None, pattern=r"^#[0-9a-fA-F]{6}$", description="Color hexadecimal para UI (ej: #4CAF50)")
-    icono: Optional[str] = Field(None, max_length=50, description="Nombre/Clase de un icono para UI (ej: fa-check)")
+    permite_movimientos: bool = Field(True, description="Indica si los equipos en este estado pueden moverse o ser asignados")
+    requiere_autorizacion: bool = Field(False, description="Indica si se requiere autorización para mover un equipo desde este estado")
+    es_estado_final: bool = Field(False, description="Indica si es un estado de fin de ciclo de vida (ej: Dado de Baja)")
+    color_hex: Optional[str] = Field(None, pattern=r"^#[0-9a-fA-F]{6}$", description="Color hexadecimal para la interfaz de usuario (ej: #4CAF50)")
+    icono: Optional[str] = Field(None, max_length=50, description="Nombre o clase de un icono para la interfaz de usuario (ej: fa-check)")
 
-# --- Schema para Creación ---
+# ===============================================================
+# Schema para Creación
+# ===============================================================
 class EstadoEquipoCreate(EstadoEquipoBase):
-    pass # Coincide con la base
+    """Schema utilizado para crear un nuevo estado de equipo."""
+    pass
 
-# --- Schema para Actualización ---
+# ===============================================================
+# Schema para Actualización
+# ===============================================================
 class EstadoEquipoUpdate(BaseModel):
+    """
+    Schema para actualizar un estado de equipo. Todos los campos son opcionales
+    para permitir actualizaciones parciales (PATCH).
+    """
     nombre: Optional[str] = Field(None, max_length=100)
     descripcion: Optional[str] = None
     permite_movimientos: Optional[bool] = None
@@ -28,27 +40,31 @@ class EstadoEquipoUpdate(BaseModel):
     color_hex: Optional[str] = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
     icono: Optional[str] = Field(None, max_length=50)
 
-# --- Schema Interno DB ---
+# ===============================================================
+# Schema Interno DB
+# ===============================================================
 class EstadoEquipoInDBBase(EstadoEquipoBase):
+    """Schema que refleja el modelo completo de la BD, incluyendo metadatos."""
     id: uuid.UUID
     created_at: datetime
 
-    model_config = {
-       "from_attributes": True
-    }
+    model_config = ConfigDict(from_attributes=True)
 
-# --- Schema para Respuesta API ---
+# ===============================================================
+# Schema para Respuesta API
+# ===============================================================
 class EstadoEquipo(EstadoEquipoInDBBase):
-    # Devuelve todos los campos
+    """Schema para devolver al cliente. Expone todos los campos del modelo de BD."""
     pass
 
-# --- NUEVO: Schema Simple ---
+# ===============================================================
+# Schema Simple (para referencias)
+# ===============================================================
 class EstadoEquipoSimple(BaseModel):
+    """Schema simplificado, útil para mostrar el estado dentro del schema de Equipo."""
     id: uuid.UUID
     nombre: str
-    # Incluir otros campos si son útiles en la vista de Equipo
     color_hex: Optional[str] = None
     icono: Optional[str] = None
 
-    model_config = { "from_attributes": True }
-# --- FIN NUEVO ---
+    model_config = ConfigDict(from_attributes=True)

@@ -1,45 +1,51 @@
 import uuid
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
-# --- Schemas para Roles (Necesitarás crearlos) ---
-# class RolBase(BaseModel):
-#     nombre: str
-#     descripcion: Optional[str] = None
+# ===============================================================
+# Schema para Rol - Para respuestas anidadas
+# ===============================================================
+class Rol(BaseModel):
+    """Schema que representa la información pública de un Rol."""
+    id: uuid.UUID
+    nombre: str
+    descripcion: Optional[str] = None
 
-# class Rol(RolBase):
-#     id: uuid.UUID
-#     created_at: datetime
-#     updated_at: datetime
-#
-#     model_config = {
-#         "from_attributes": True
-#     }
-# --- Fin Schemas Rol ---
+    model_config = ConfigDict(from_attributes=True)
 
-# --- Schemas Usuario Corregidos ---
+
+# ===============================================================
+# Schemas para Usuario
+# ===============================================================
 class UsuarioBase(BaseModel):
-    nombre_usuario: str = Field(..., min_length=3, max_length=50)
-    email: Optional[EmailStr] = None # Añadido
+    """Campos base que comparte un usuario."""
+    nombre_usuario: str = Field(..., min_length=3, max_length=50, description="Nombre de usuario único")
+    email: Optional[EmailStr] = Field(None, description="Correo electrónico del usuario")
 
 class UsuarioCreate(UsuarioBase):
-    password: str = Field(..., min_length=8)
-    rol_id: uuid.UUID
+    """Schema para crear un nuevo usuario. Requiere contraseña y rol."""
+    password: str = Field(..., min_length=8, description="Contraseña para el nuevo usuario")
+    rol_id: uuid.UUID = Field(..., description="ID del rol a asignar al usuario")
 
 class UsuarioUpdate(BaseModel):
+    """
+    Schema para actualizar un usuario. Todos los campos son opcionales,
+    permitiendo actualizaciones parciales.
+    """
     nombre_usuario: Optional[str] = Field(None, min_length=3, max_length=50)
     email: Optional[EmailStr] = None
-    password: Optional[str] = Field(None, min_length=8) # Para actualizar contraseña
+    password: Optional[str] = Field(None, min_length=8, description="Proporcionar solo si se desea cambiar la contraseña")
     rol_id: Optional[uuid.UUID] = None
     intentos_fallidos: Optional[int] = None
     bloqueado: Optional[bool] = None
     requiere_cambio_contrasena: Optional[bool] = None
 
 class UsuarioInDBBase(UsuarioBase):
+    """Schema base que refleja el modelo de la base de datos, incluyendo campos privados."""
     id: uuid.UUID
-    rol_id: uuid.UUID # Guardamos el ID
-    hashed_password: str # Nombre consistente con el modelo ORM corregido
+    rol_id: uuid.UUID
+    hashed_password: str  # Nombre consistente con el modelo ORM
     token_temporal: Optional[uuid.UUID] = None
     token_expiracion: Optional[datetime] = None
     intentos_fallidos: int
@@ -49,36 +55,32 @@ class UsuarioInDBBase(UsuarioBase):
     updated_at: datetime
     requiere_cambio_contrasena: bool
 
-    model_config = {
-       "from_attributes": True
-    } # Anteriormente orm_mode=True
+    model_config = ConfigDict(from_attributes=True)
 
-# Schema para devolver al cliente (sin datos sensibles)
 class Usuario(UsuarioBase):
+    """
+    Schema para devolver al cliente. Excluye datos sensibles como la contraseña
+    e incluye el objeto Rol anidado para respuestas más completas.
+    """
     id: uuid.UUID
-    rol_id: uuid.UUID # Devolver rol_id (o el objeto Rol completo si se define)
-    # rol: Optional[Rol] = None # Opcional: Embeber el objeto Rol
+    rol_id: uuid.UUID
     bloqueado: bool
     ultimo_login: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     requiere_cambio_contrasena: bool
+    rol: Rol
 
-    model_config = {
-       "from_attributes": True
-    }
+    model_config = ConfigDict(from_attributes=True)
 
-# Schema interno para la base de datos
 class UsuarioInDB(UsuarioInDBBase):
+    """Schema completo para uso interno, representa una fila de la BD."""
     pass
 
-# --- Schema Simple ---
-# Para referencias en otros schemas (ej: en respuestas de Movimiento, Documentacion, etc.)
 class UsuarioSimple(BaseModel):
+    """Schema simplificado, útil para mostrar información del autor de un movimiento, etc."""
     id: uuid.UUID
     nombre_usuario: str
     email: Optional[EmailStr] = None
 
-    model_config = {
-       "from_attributes": True
-    }
+    model_config = ConfigDict(from_attributes=True)

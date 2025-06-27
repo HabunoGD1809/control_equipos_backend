@@ -57,10 +57,9 @@ class MovimientoCreate(MovimientoBase):
 # Campos que podrían actualizarse en un movimiento existente (ej: estado, fecha retorno real)
 class MovimientoUpdate(BaseModel):
     # estado: Optional[str] = Field(None, description=f"Nuevo estado. Válidos: {ESTADOS_MOVIMIENTO_VALIDOS}")
-    fecha_retorno: Optional[datetime] = Field(None, description="Fecha real en que retornó el equipo")
-    recibido_por: Optional[str] = Field(None, description="Actualizar quién recibió en la devolución")
-    observaciones: Optional[str] = Field(None, description="Añadir/modificar observaciones")
-    # Actualizar otros campos suele ser menos común, se podría cancelar y crear uno nuevo.
+    fecha_retorno: Optional[datetime] = None
+    recibido_por: Optional[str] = None
+    observaciones: Optional[str] = None
 
 # --- Schema Interno DB ---
 # Representa todos los campos del modelo ORM

@@ -26,7 +26,6 @@ async def test_read_usuario_me_success(
     assert response.status_code == status.HTTP_200_OK
     user_data = response.json()
     
-    # CORRECCIÓN: Se compara contra la fixture correcta.
     assert user_data["id"] == str(test_usuario_regular_fixture.id)
     assert user_data["nombre_usuario"] == test_usuario_regular_fixture.nombre_usuario
     assert user_data["email"] == test_usuario_regular_fixture.email
@@ -128,7 +127,7 @@ async def test_create_usuario_duplicate_username(
     }
     response = await client.post(f"{settings.API_V1_STR}/usuarios/", headers=headers, json=new_user_data)
     assert response.status_code == status.HTTP_409_CONFLICT
-    assert "nombre de usuario ya existe" in response.json()["detail"].lower()
+    assert "ya existe un usuario con ese nombre de usuario" in response.json()["detail"].lower()
 
 @pytest.mark.asyncio
 async def test_create_usuario_duplicate_email(
@@ -149,7 +148,7 @@ async def test_create_usuario_duplicate_email(
     }
     response = await client.post(f"{settings.API_V1_STR}/usuarios/", headers=headers, json=new_user_data)
     assert response.status_code == status.HTTP_409_CONFLICT
-    assert "correo electrónico ya existe" in response.json()["detail"].lower()
+    assert "ya existe un usuario con ese correo electrónico" in response.json()["detail"].lower()
 
 @pytest.mark.asyncio
 async def test_create_usuario_invalid_rol(client: AsyncClient, auth_token_admin: str):
@@ -308,7 +307,7 @@ async def test_delete_usuario_success(client: AsyncClient, auth_token_admin: str
     # Eliminar
     delete_response = await client.delete(f"{settings.API_V1_STR}/usuarios/{target_user.id}", headers=headers)
     assert delete_response.status_code == status.HTTP_200_OK
-    assert delete_response.json()["id"] == str(target_user.id)
+    assert "eliminado correctamente" in delete_response.json()["msg"]
     
     # Verificar que ya no se puede obtener
     get_response = await client.get(f"{settings.API_V1_STR}/usuarios/{target_user.id}", headers=headers)

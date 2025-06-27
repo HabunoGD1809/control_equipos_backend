@@ -7,15 +7,10 @@ from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.db.base import Base
-# --- Añadido: Importar el modelo de asociación ---
-from .rol_permiso import RolPermiso # <-- IMPORTANTE
-# --- Fin Añadido ---
-
+from .rol_permiso import RolPermiso 
 
 if TYPE_CHECKING:
     from .rol import Rol
-    # from .rol_permiso import RolPermiso # Ya no es solo para TYPE_CHECKING
-
 
 class Permiso(Base):
     __tablename__ = "permisos"
@@ -28,9 +23,7 @@ class Permiso(Base):
 
     roles: Mapped[List["Rol"]] = relationship(
         "Rol",
-        # --- CORRECCIÓN: Usar el objeto Table explícito ---
-        secondary=RolPermiso.__table__, # <-- CORREGIDO
-        # -------------------------------------------------
+        secondary=RolPermiso.__table__,
         back_populates="permisos",
         lazy="selectin"
     )

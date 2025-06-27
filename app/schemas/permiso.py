@@ -2,41 +2,55 @@ import uuid
 from typing import Optional
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
-# --- Schema Base ---
-# Campos compartidos / Campos para creación básica si no hay 'Create' específico
+# ===============================================================
+# Schema Base
+# ===============================================================
 class PermisoBase(BaseModel):
-    nombre: str = Field(..., min_length=3, max_length=100, description="Nombre clave del permiso (ej: ver_equipos)")
-    descripcion: Optional[str] = Field(None, description="Descripción detallada del permiso")
+    """Campos base que definen un permiso en el sistema."""
+    nombre: str = Field(
+        ...,
+        min_length=3,
+        max_length=100,
+        description="Nombre clave del permiso (ej: ver_equipos)"
+    )
+    descripcion: Optional[str] = Field(
+        None,
+        description="Descripción detallada de lo que este permiso autoriza"
+    )
 
-# --- Schema para Creación ---
-# Hereda de Base y añade campos específicos para la creación (si los hubiera)
+# ===============================================================
+# Schema para Creación
+# ===============================================================
 class PermisoCreate(PermisoBase):
-    # En este caso, coincide con PermisoBase
-    pass
+    """Schema utilizado para crear un nuevo permiso."""
+    pass  # Hereda todos los campos y validaciones.
 
-# --- Schema para Actualización ---
-# Todos los campos son opcionales para permitir actualizaciones parciales (PATCH)
+# ===============================================================
+# Schema para Actualización
+# ===============================================================
 class PermisoUpdate(BaseModel):
+    """
+    Schema para actualizar un permiso. Todos los campos son opcionales
+    para permitir actualizaciones parciales (PATCH).
+    """
     nombre: Optional[str] = Field(None, min_length=3, max_length=100, description="Nuevo nombre clave del permiso")
     descripcion: Optional[str] = Field(None, description="Nueva descripción del permiso")
 
-# --- Schema con datos de la DB ---
-# Hereda de Base y añade campos que están en la DB pero no se envían en creación/update
-# como id y created_at. Útil como base para el schema de respuesta.
+# ===============================================================
+# Schema Interno DB
+# ===============================================================
 class PermisoInDBBase(PermisoBase):
+    """Schema que refleja el modelo completo de la BD, incluyendo metadatos."""
     id: uuid.UUID
     created_at: datetime
 
-    # Configuración para Pydantic v2 (sustituye a orm_mode)
-    model_config = {
-       "from_attributes": True
-    }
+    model_config = ConfigDict(from_attributes=True)
 
-# --- Schema para Respuestas API ---
-# Hereda de InDBBase. Define exactamente qué se devuelve al cliente.
-# Puede omitir campos internos o sensibles si fuera necesario.
+# ===============================================================
+# Schema para Respuesta API
+# ===============================================================
 class Permiso(PermisoInDBBase):
-    # En este caso, coincide con PermisoInDBBase
+    """Schema para devolver al cliente. Expone todos los campos del modelo de BD."""
     pass

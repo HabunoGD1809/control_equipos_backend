@@ -229,30 +229,71 @@ async def test_update_movimiento_observaciones_success(
     movimiento_id = create_response.json().get("id")
     assert movimiento_id is not None, "La respuesta de creación no devolvió un ID."
 
-    update_schema = MovimientoUpdate(observaciones="Observaciones actualizadas por test", fecha_retorno=None, recibido_por="Updated")
+    update_schema = MovimientoUpdate(observaciones="Observaciones actualizadas por test", recibido_por="Updated Test")
     update_data = jsonable_encoder(update_schema.model_dump(exclude_unset=True))
+    
     update_response = await client.put(f"{settings.API_V1_STR}/movimientos/{movimiento_id}", headers=headers, json=update_data)
+    
+    # Con la corrección en la ruta, esta prueba ahora debe pasar.
     assert update_response.status_code == status.HTTP_200_OK, f"Detalle error: {update_response.text}"
+    
     updated_mov = update_response.json()
     assert updated_mov["id"] == movimiento_id
     assert updated_mov["observaciones"] == "Observaciones actualizadas por test"
+    assert updated_mov["recibido_por"] == "Updated Test"
 
-async def test_cancel_movimiento_success(
+async def test_cancel_movimiento_fail_on_completed(
     client: AsyncClient, auth_token_supervisor: str, equipo_para_movimiento: Equipo
 ):
+    """Verifica que no se puede cancelar un movimiento ya completado."""
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     create_schema = MovimientoCreate(
          equipo_id=equipo_para_movimiento.id, tipo_movimiento="Asignacion Interna",
-         origen="O", destino="D", proposito="Test",
+         origen="O", destino="D", proposito="Test para Cancelar (fallo)",
          fecha_prevista_retorno=None, recibido_por=None, observaciones=None
     )
     create_data = jsonable_encoder(create_schema)
     create_response = await client.post(f"{settings.API_V1_STR}/movimientos/", headers=headers, json=create_data)
     assert create_response.status_code == status.HTTP_201_CREATED, f"Fallo al crear movimiento previo: {create_response.text}"
-    movimiento_id = create_response.json().get("id")
-    assert movimiento_id is not None, "La respuesta de creación no devolvió un ID."
-    original_estado = create_response.json().get("estado", "Desconocido")
+    
+    mov_response = create_response.json()
+    movimiento_id = mov_response.get("id")
+    original_estado = mov_response.get("estado", "Desconocido")
+    
+    assert original_estado == "Completado"
 
     cancel_response = await client.post(f"{settings.API_V1_STR}/movimientos/{movimiento_id}/cancelar", headers=headers)
     assert cancel_response.status_code == status.HTTP_409_CONFLICT, f"Detalle error: {cancel_response.text}"
-    assert f"no se puede cancelar un movimiento en estado '{original_estado.lower()}'" in cancel_response.json()["detail"].lower()
+    assert "no se puede cancelar un movimiento en estado 'completado'" in cancel_response.json()["detail"].lower()
+
+
+async def test_cancel_movimiento_success_on_cancelable_state(
+    client: AsyncClient, auth_token_supervisor: str, equipo_para_movimiento: Equipo, db: Session
+):
+    """Verifica que un movimiento en estado cancelable puede ser cancelado."""
+    headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
+    
+    # CORRECCIÓN: Proporcionar la fecha_prevista_retorno para cumplir el constraint de la DB.
+    fecha_retorno = datetime.now(timezone.utc) + timedelta(days=5)
+
+    mov_pendiente = Movimiento(
+        equipo_id=equipo_para_movimiento.id,
+        tipo_movimiento="Salida Temporal",
+        estado="Pendiente",
+        origen="Almacén",
+        destino="Externo",
+        proposito="Prueba de cancelación exitosa",
+        fecha_prevista_retorno=fecha_retorno # Campo obligatorio añadido
+    )
+    db.add(mov_pendiente)
+    db.commit()
+    db.refresh(mov_pendiente)
+    movimiento_id = mov_pendiente.id
+    
+    cancel_response = await client.post(f"{settings.API_V1_STR}/movimientos/{movimiento_id}/cancelar", headers=headers)
+    assert cancel_response.status_code == status.HTTP_200_OK, f"Detalle error: {cancel_response.text}"
+    
+    cancelled_mov = cancel_response.json()
+    assert cancelled_mov["id"] == str(movimiento_id)
+    assert cancelled_mov["estado"] == "Cancelado"
+    assert "Cancelado por" in cancelled_mov["observaciones"]

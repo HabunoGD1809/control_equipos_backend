@@ -25,7 +25,7 @@ router = APIRouter()
 
 PERM_REGISTRAR_MOVIMIENTOS = "registrar_movimientos"
 PERM_VER_MOVIMIENTOS = "ver_movimientos"
-PERM_EDITAR_MOVIMIENTOS = "editar_movimientos" # Asumo que este permiso existe //este permiso no existe habra que crearlo en la base de datos y anadirlo a un rol
+PERM_EDITAR_MOVIMIENTOS = "editar_movimientos"
 PERM_CANCELAR_MOVIMIENTOS = "cancelar_movimientos"
 
 @router.post("/",
@@ -49,54 +49,40 @@ def create_movimiento(
     """
     logger.info(f"Usuario '{current_user.nombre_usuario}' intentando registrar movimiento tipo '{movimiento_in.tipo_movimiento}' para equipo ID '{movimiento_in.equipo_id}'.")
     
-    autorizado_por_id_param = getattr(movimiento_in, 'autorizado_por_id', None) # Si el schema lo tiene
+    autorizado_por_id_param = getattr(movimiento_in, 'autorizado_por_id', None)
 
     try:
         movimiento = movimiento_service.create_movimiento_via_db_func(
             db=db,
             obj_in=movimiento_in,
             registrado_por_usuario=current_user,
-            autorizado_por_id=autorizado_por_id_param # Pasar el ID si existe en el schema
+            autorizado_por_id=autorizado_por_id_param
         )
-        # El servicio no hace commit, así que lo hacemos aquí.
         db.commit()
         
-        # Refrescar el objeto para cargar todas las relaciones (especialmente las que la función de BD pudo haber afectado indirectamente)
-        # y para asegurar que la respuesta contenga el estado más reciente.
-        db.refresh(movimiento)
-        if hasattr(movimiento, 'equipo') and movimiento.equipo:
-            db.refresh(movimiento.equipo) # El estado del equipo se actualiza por la función de BD
-        if hasattr(movimiento, 'usuario_registrador') and movimiento.usuario_registrador:
-             db.refresh(movimiento.usuario_registrador)
-        if hasattr(movimiento, 'usuario_autorizador') and movimiento.usuario_autorizador:
-            db.refresh(movimiento.usuario_autorizador)
+        db.refresh(movimiento, attribute_names=['equipo', 'usuario_registrador', 'usuario_autorizador'])
 
         logger.info(f"Movimiento ID {movimiento.id} ({movimiento.tipo_movimiento}) para equipo ID {movimiento.equipo_id} registrado exitosamente por '{current_user.nombre_usuario}'.")
         return movimiento
-    except HTTPException as http_exc: # Si el servicio lanzó una HTTPException (ej. 404, 409, 422, 403)
+    except HTTPException as http_exc: 
         db.rollback() 
         logger.warning(f"Error HTTP al registrar movimiento: {http_exc.status_code} - {http_exc.detail}")
         raise http_exc
-    except IntegrityError as e: # Errores de constraint de la BD que no fueron manejados como PG_RaiseException
+    except IntegrityError as e:
         db.rollback()
         error_detail = str(getattr(e, 'orig', e))
         logger.error(f"Error de integridad al registrar movimiento: {error_detail}", exc_info=True)
-        # Aquí se podría intentar ser más específico si se conocen las constraints
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al registrar el movimiento (constraint).")
-    except SQLAlchemyDBAPIError as e: # Para otros errores de DBAPI, incluyendo RaiseException no capturados por el servicio como HTTPException
+    except SQLAlchemyDBAPIError as e:
         db.rollback()
         original_exc = getattr(e, 'orig', None)
         error_message_for_client = str(original_exc if original_exc else e)
         logger.error(f"Error DBAPI al registrar movimiento: {error_message_for_client}", exc_info=True)
         
-        # Esta lógica es un fallback si el servicio no convirtió la excepción.
-        # Idealmente, el servicio debería manejar todas las PG_RaiseException conocidas.
         if PG_RaiseException and isinstance(original_exc, PG_RaiseException):
             diag_message = getattr(getattr(original_exc, 'diag', None), 'message_primary', error_message_for_client)
-            # Mapeos específicos (duplicaría un poco la lógica del servicio si el servicio ya lo hace)
             if "equipo no encontrado" in diag_message.lower():
                  raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=diag_message)
-            # ... otros mapeos si es necesario ...
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error de base de datos al procesar: {diag_message}")
 
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al registrar el movimiento.")
@@ -147,13 +133,13 @@ def read_movimiento_by_id(
     Requiere el permiso: `ver_movimientos`.
     """
     logger.info(f"Usuario '{current_user.nombre_usuario}' solicitando movimiento ID: {movimiento_id}.")
-    movimiento = movimiento_service.get_or_404(db, id=movimiento_id) # get_or_404 ya hace el get con relaciones
+    movimiento = movimiento_service.get_or_404(db, id=movimiento_id)
     return movimiento
 
 
 @router.put("/{movimiento_id}",
             response_model=Movimiento,
-            dependencies=[Depends(deps.PermissionChecker([PERM_EDITAR_MOVIMIENTOS]))], # Asumiendo este permiso
+            dependencies=[Depends(deps.PermissionChecker([PERM_EDITAR_MOVIMIENTOS]))],
             summary="Actualizar Observaciones/Info de Retorno de un Movimiento",
             response_description="Movimiento actualizado.")
 def update_movimiento_observaciones(
@@ -165,33 +151,24 @@ def update_movimiento_observaciones(
 ) -> Any:
     """
     Actualiza campos permitidos de un movimiento (ej: observaciones, fecha_retorno).
-    No permite cambiar el tipo, equipo, origen/destino principal, etc.
-    Requiere el permiso: `editar_movimientos` (o un permiso más específico).
+    La lógica de qué campos se pueden actualizar según el estado del movimiento
+    está centralizada en el servicio `movimiento_service`.
+    Requiere el permiso: `editar_movimientos`.
     """
     logger.info(f"Usuario '{current_user.nombre_usuario}' actualizando movimiento ID: {movimiento_id} con datos: {movimiento_in.model_dump(exclude_unset=True)}")
     db_movimiento = movimiento_service.get_or_404(db, id=movimiento_id)
     
-    # Validar si el movimiento está en un estado que permite este tipo de actualización.
-    # Por ejemplo, las observaciones podrían actualizarse siempre, pero la fecha_retorno solo si está pendiente.
-    if db_movimiento.estado in ["Completado", "Cancelado"]:
-        logger.warning(f"Intento de actualizar movimiento ID {movimiento_id} en estado '{db_movimiento.estado}'.")
-        # Podrías permitir solo actualizar 'observaciones' en estos estados
-        if any(k not in ["observaciones"] for k in movimiento_in.model_dump(exclude_unset=True).keys()):
-             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se pueden modificar detalles principales de un movimiento en estado '{db_movimiento.estado}'.")
-
     try:
         updated_movimiento = movimiento_service.update(db=db, db_obj=db_movimiento, obj_in=movimiento_in)
         db.commit()
-        db.refresh(updated_movimiento)
-        # Refrescar relaciones si es necesario para la respuesta
         db.refresh(updated_movimiento, attribute_names=['equipo', 'usuario_registrador', 'usuario_autorizador'])
         logger.info(f"Movimiento ID {movimiento_id} actualizado exitosamente por '{current_user.nombre_usuario}'.")
         return updated_movimiento
-    except HTTPException as http_exc: # Errores de validación del servicio
-        db.rollback() # Importante si el servicio no lanza la excepción antes de cualquier cambio en sesión
+    except HTTPException as http_exc:
+        db.rollback()
         logger.warning(f"Error HTTP al actualizar movimiento ID {movimiento_id}: {http_exc.detail}")
         raise http_exc
-    except Exception as e: # Errores inesperados
+    except Exception as e:
         db.rollback()
         logger.error(f"Error inesperado actualizando movimiento ID {movimiento_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al actualizar el movimiento.")
@@ -216,26 +193,17 @@ def cancel_movimiento(
     db_movimiento = movimiento_service.get_or_404(db, id=movimiento_id)
     
     try:
-        # El servicio cancel_movimiento actualiza el estado y las observaciones del objeto movimiento.
         cancelled_movimiento = movimiento_service.cancel_movimiento(db=db, movimiento=db_movimiento, current_user=current_user)
-        # Aquí podría ir lógica adicional si cancelar el movimiento implica revertir el estado del equipo,
-        # preferiblemente mediante otra llamada de servicio o una función de BD.
-        # Por ahora, solo se confirma el cambio en el movimiento.
         db.commit()
-        db.refresh(cancelled_movimiento)
-        # Refrescar relaciones para la respuesta.
         db.refresh(cancelled_movimiento, attribute_names=['equipo', 'usuario_registrador', 'usuario_autorizador'])
-        if cancelled_movimiento.equipo: # El estado del equipo pudo haber cambiado por la cancelación
-            db.refresh(cancelled_movimiento.equipo, attribute_names=['estado'])
-
-
+        
         logger.info(f"Movimiento ID {movimiento_id} cancelado exitosamente por '{current_user.nombre_usuario}'.")
         return cancelled_movimiento
-    except HTTPException as http_exc: # Captura errores de validación del servicio (ej. estado no cancelable)
+    except HTTPException as http_exc:
         db.rollback()
         logger.warning(f"Error HTTP al cancelar movimiento ID {movimiento_id}: {http_exc.detail}")
         raise http_exc
-    except Exception as e: # Errores inesperados
+    except Exception as e:
         db.rollback()
         logger.error(f"Error inesperado cancelando movimiento ID {movimiento_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al cancelar el movimiento.")

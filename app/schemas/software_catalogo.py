@@ -2,90 +2,73 @@ import uuid
 from typing import Optional
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ConfigDict
 
-# Listas de valores válidos (deben coincidir con CHECKs DB)
-TIPOS_LICENCIA_VALIDOS = [
-    'Perpetua', 'Suscripción Anual', 'Suscripción Mensual',
-    'OEM', 'Freeware', 'Open Source', 'Otra'
-]
-METRICAS_LICENCIAMIENTO_VALIDAS = [
-    'Por Dispositivo', 'Por Usuario Nominal', 'Por Usuario Concurrente',
-    'Por Core', 'Por Servidor', 'Gratuita', 'Otra'
-]
+from .enums import TipoLicenciaSoftwareEnum, MetricaLicenciamientoEnum
 
-# --- Schema Base ---
+# ===============================================================
+# Schema Base
+# ===============================================================
 class SoftwareCatalogoBase(BaseModel):
+    """Campos base que definen un producto en el catálogo de software."""
     nombre: str = Field(..., max_length=255, description="Nombre del producto de software")
     version: Optional[str] = Field(None, max_length=50, description="Versión específica (ej: 2023, 11, CC)")
     fabricante: Optional[str] = Field(None, max_length=100, description="Fabricante del software")
     descripcion: Optional[str] = Field(None, description="Descripción detallada del software")
     categoria: Optional[str] = Field(None, max_length=100, description="Categoría (ej: Ofimática, Diseño, SO)")
-    tipo_licencia: str = Field(..., description=f"Tipo de licencia. Válidos: {TIPOS_LICENCIA_VALIDOS}")
-    metrica_licenciamiento: str = Field(..., description=f"Métrica de licenciamiento. Válidas: {METRICAS_LICENCIAMIENTO_VALIDAS}")
 
-    # Validadores opcionales para asegurar valores correctos
-    @field_validator('tipo_licencia')
-    def tipo_licencia_valido(cls, v):
-        if v not in TIPOS_LICENCIA_VALIDOS:
-            raise ValueError(f"Tipo de licencia inválido. Válidos: {TIPOS_LICENCIA_VALIDOS}")
-        return v
+    tipo_licencia: TipoLicenciaSoftwareEnum = Field(..., description="Tipo de licencia del software")
+    metrica_licenciamiento: MetricaLicenciamientoEnum = Field(..., description="Métrica de licenciamiento")
 
-    @field_validator('metrica_licenciamiento')
-    def metrica_valida(cls, v):
-        if v not in METRICAS_LICENCIAMIENTO_VALIDAS:
-            raise ValueError(f"Métrica de licenciamiento inválida. Válidas: {METRICAS_LICENCIAMIENTO_VALIDAS}")
-        return v
-
-# --- Schema para Creación ---
+# ===============================================================
+# Schema para Creación
+# ===============================================================
 class SoftwareCatalogoCreate(SoftwareCatalogoBase):
-    pass # Coincide con la base
+    """Schema utilizado para registrar un nuevo software en el catálogo."""
+    pass  # Hereda todos los campos y validaciones.
 
-# --- Schema para Actualización ---
+# ===============================================================
+# Schema para Actualización
+# ===============================================================
 class SoftwareCatalogoUpdate(BaseModel):
+    """
+    Schema para actualizar un software del catálogo. Todos los campos son opcionales
+    para permitir actualizaciones parciales (PATCH).
+    """
     nombre: Optional[str] = Field(None, max_length=255)
     version: Optional[str] = Field(None, max_length=50)
     fabricante: Optional[str] = Field(None, max_length=100)
     descripcion: Optional[str] = None
     categoria: Optional[str] = Field(None, max_length=100)
-    tipo_licencia: Optional[str] = Field(None, description=f"Nuevo Tipo. Válidos: {TIPOS_LICENCIA_VALIDOS}")
-    metrica_licenciamiento: Optional[str] = Field(None, description=f"Nueva Métrica. Válidas: {METRICAS_LICENCIAMIENTO_VALIDAS}")
+    tipo_licencia: Optional[TipoLicenciaSoftwareEnum] = None
+    metrica_licenciamiento: Optional[MetricaLicenciamientoEnum] = None
 
-    # Validadores opcionales para actualización
-    @field_validator('tipo_licencia', mode='before')
-    def check_tipo_licencia_opcional(cls, v):
-        if v is not None and v not in TIPOS_LICENCIA_VALIDOS:
-            raise ValueError(f"Tipo de licencia inválido. Válidos: {TIPOS_LICENCIA_VALIDOS}")
-        return v
-
-    @field_validator('metrica_licenciamiento', mode='before')
-    def check_metrica_opcional(cls, v):
-        if v is not None and v not in METRICAS_LICENCIAMIENTO_VALIDAS:
-            raise ValueError(f"Métrica de licenciamiento inválida. Válidas: {METRICAS_LICENCIAMIENTO_VALIDAS}")
-        return v
-
-# --- Schema Interno DB ---
+# ===============================================================
+# Schema Interno DB
+# ===============================================================
 class SoftwareCatalogoInDBBase(SoftwareCatalogoBase):
+    """Schema que refleja el modelo completo de la BD, incluyendo metadatos."""
     id: uuid.UUID
     created_at: datetime
     updated_at: datetime
 
-    model_config = {
-       "from_attributes": True
-    }
+    model_config = ConfigDict(from_attributes=True)
 
-# --- Schema para Respuesta API ---
+# ===============================================================
+# Schema para Respuesta API
+# ===============================================================
 class SoftwareCatalogo(SoftwareCatalogoInDBBase):
-    # Devuelve todos los campos por defecto
+    """Schema para devolver al cliente. Expone todos los campos del modelo de BD."""
     pass
 
-# --- Schema Simple ---
+# ===============================================================
+# Schema Simple (para listas o referencias)
+# ===============================================================
 class SoftwareCatalogoSimple(BaseModel):
+    """Schema simplificado, útil para vistas de lista o referencias en otros objetos."""
     id: uuid.UUID
     nombre: str
     version: Optional[str] = None
     fabricante: Optional[str] = None
 
-    model_config = {
-       "from_attributes": True
-    }
+    model_config = ConfigDict(from_attributes=True)

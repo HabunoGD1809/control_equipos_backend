@@ -2,96 +2,91 @@ import uuid
 from typing import Optional, TYPE_CHECKING
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
-# Usa TYPE_CHECKING para importar solo durante el chequeo de tipos
-# para evitar importaciones circulares con app.schemas.equipo
+from .enums import TipoRelacionComponenteEnum
+
 if TYPE_CHECKING:
     from .equipo import EquipoSimple
 
-# --- Schema Base de la Relación (Campos que definen la relación en la DB) ---
+# ===============================================================
+# Schema Base de la Relación
+# ===============================================================
 class EquipoComponenteBase(BaseModel):
-    """
-    Schema base con todos los campos que definen una relación equipo-componente.
-    Este es el schema que el método `create` del servicio espera en `obj_in`
-    (o un schema que herede de este, como EquipoComponenteCreate más abajo).
-    """
+    """Campos base que definen una relación entre un equipo padre y un componente."""
     equipo_padre_id: uuid.UUID = Field(..., description="ID del equipo principal o ensamblaje")
     equipo_componente_id: uuid.UUID = Field(..., description="ID del equipo que actúa como componente")
-    tipo_relacion: str = Field(default='componente', max_length=50, description="Tipo de vínculo (componente, conectado_a, etc.)")
-    cantidad: int = Field(default=1, gt=0, description="Cantidad de este componente (ej: 2 módulos RAM)")
-    notas: Optional[str] = Field(None, description="Observaciones sobre la relación")
+    tipo_relacion: TipoRelacionComponenteEnum = Field(default=TipoRelacionComponenteEnum.COMPONENTE, description="Tipo de vínculo entre los equipos")
+    cantidad: int = Field(default=1, gt=0, description="Cantidad de este componente (ej: 2 módulos de RAM)")
+    notas: Optional[str] = Field(None, description="Observaciones sobre esta relación específica")
 
-# --- Schema que el SERVICIO EquipoComponenteService.create espera en su argumento obj_in ---
+# ===============================================================
+# Schema para Creación (usado por el servicio)
+# ===============================================================
 class EquipoComponenteCreate(EquipoComponenteBase):
-    """
-    Este schema se utiliza para pasar los datos al método `create` del servicio.
-    Hereda todos los campos de EquipoComponenteBase.
-    En tu servicio `equipo_componente.py`, el método `create` está tipado con:
-    `obj_in: EquipoComponenteCreate` y este es el schema al que se refiere.
-    """
-    pass # Hereda todos los campos de EquipoComponenteBase
+    """Schema para pasar los datos al método de creación del servicio."""
+    pass
 
-# --- Schema para el CUERPO (BODY) de la solicitud POST /equipos/{equipo_id}/componentes ---
-class EquipoComponenteBodyCreate(BaseModel): 
+# ===============================================================
+# Schema para el Cuerpo de la Solicitud POST
+# ===============================================================
+class EquipoComponenteBodyCreate(BaseModel):
     """
-    Este schema define lo que se espera en el CUERPO JSON de la solicitud POST.
-    NO incluye `equipo_padre_id` porque ese ID se obtiene del path de la URL.
+    Define el cuerpo JSON para la solicitud POST /equipos/{equipo_id}/componentes.
+    No incluye equipo_padre_id, ya que se toma del path de la URL.
     """
-    equipo_componente_id: uuid.UUID = Field(..., description="ID del equipo que actúa como componente y se va a añadir.")
-    # tipo_relacion se toma de EquipoComponenteBase si también lo quieres en el body,
-    # o puedes definirlo aquí si quieres que sea diferente. Por simplicidad, lo incluimos.
-    tipo_relacion: str = Field(default='componente', max_length=50, description="Tipo de vínculo (ej: 'componente', 'conectado_a')")
-    cantidad: int = Field(default=1, gt=0, description="Cantidad del componente a añadir.")
-    notas: Optional[str] = Field(None, description="Notas adicionales sobre esta relación componente-padre.")
+    equipo_componente_id: uuid.UUID = Field(..., description="ID del equipo componente a añadir")
+    tipo_relacion: TipoRelacionComponenteEnum = Field(default=TipoRelacionComponenteEnum.COMPONENTE, description="Tipo de vínculo entre los equipos")
+    cantidad: int = Field(default=1, gt=0, description="Cantidad del componente a añadir")
+    notas: Optional[str] = Field(None, description="Notas adicionales sobre esta relación")
 
-# --- Schema para Actualización de la Relación (PUT a /equipos/componentes/{relacion_id}) ---
+# ===============================================================
+# Schema para Actualización de la Relación
+# ===============================================================
 class EquipoComponenteUpdate(BaseModel):
-    tipo_relacion: Optional[str] = Field(None, max_length=50)
-    cantidad: Optional[int] = Field(None, gt=0) # gt=0 asegura que si se actualiza, sea positivo
+    """
+    Schema para actualizar una relación existente. Todos los campos son opcionales.
+    """
+    tipo_relacion: Optional[TipoRelacionComponenteEnum] = None
+    cantidad: Optional[int] = Field(None, gt=0, description="La nueva cantidad debe ser un entero positivo")
     notas: Optional[str] = None
 
-# --- Schema Interno DB y de Respuesta (para la tabla asociativa 'equipo_componentes') ---
-class EquipoComponenteInDBBase(EquipoComponenteBase): # Hereda los campos de la relación
-    id: uuid.UUID # ID propio de la relación en la tabla asociativa
+# ===============================================================
+# Schema Interno DB y de Respuesta
+# ===============================================================
+class EquipoComponenteInDBBase(EquipoComponenteBase):
+    """Schema que refleja el modelo de la BD, incluyendo el ID de la relación."""
+    id: uuid.UUID
     created_at: datetime
-    # updated_at: datetime # Si tu tabla asociativa tiene updated_at
 
-    model_config = {
-        "from_attributes": True # Para Pydantic V2
-    }
+    model_config = ConfigDict(from_attributes=True)
 
 class EquipoComponente(EquipoComponenteInDBBase):
-    """Schema de respuesta completo para una relación equipo-componente."""
-    # Anidar información simple del equipo padre y componente para la respuesta
+    """Schema de respuesta completo que anida la información del padre y del componente."""
     equipo_padre: Optional["EquipoSimple"] = None
     equipo_componente: Optional["EquipoSimple"] = None
 
-# --- Schemas específicos para listar componentes o padres ---
+# ===============================================================
+# Schemas Específicos para Listas
+# ===============================================================
 class ComponenteInfo(BaseModel):
-    """Información de un componente asociado a un equipo padre."""
-    id_relacion: uuid.UUID = Field(..., alias="id") # ID de la tabla EquipoComponente
-    componente: "EquipoSimple" # Detalles del equipo que es el componente
-    tipo_relacion: str
+    """Schema para mostrar la información de un componente asociado a un equipo padre."""
+    id_relacion: uuid.UUID = Field(..., alias="id")
+    componente: "EquipoSimple"
+    tipo_relacion: TipoRelacionComponenteEnum
     cantidad: int
     notas: Optional[str] = None
     created_at: datetime
 
-    model_config = {
-        "from_attributes": True,
-        "populate_by_name": True, # Permite que 'id' en el modelo ORM mapee a 'id_relacion'
-    }
+    model_config = ConfigDict(from_attributes=True)
 
 class PadreInfo(BaseModel):
-    """Información de un equipo padre al que un equipo está asociado como componente."""
-    id_relacion: uuid.UUID = Field(..., alias="id") # ID de la tabla EquipoComponente
-    padre: "EquipoSimple" # Detalles del equipo que es el padre
-    tipo_relacion: str
-    cantidad_en_padre: int = Field(..., alias="cantidad") # Cantidad de este componente en ese padre
+    """Schema para mostrar la información de un equipo padre al que este equipo pertenece."""
+    id_relacion: uuid.UUID = Field(..., alias="id")
+    padre: "EquipoSimple"
+    tipo_relacion: TipoRelacionComponenteEnum
+    cantidad_en_padre: int = Field(..., alias="cantidad")
     notas: Optional[str] = None
     created_at: datetime
 
-    model_config = {
-        "from_attributes": True,
-        "populate_by_name": True,
-    }
+    model_config = ConfigDict(from_attributes=True)

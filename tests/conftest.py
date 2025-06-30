@@ -146,17 +146,14 @@ TEST_TESTER_PASSWORD = "TesterPass123!"
 def test_permisos_definidos(db: Session) -> Dict[str, Permiso]:
     logger.debug("Inicio fixture: test_permisos_definidos")
     perm_names = [
-        "ver_dashboard", "ver_equipos", "crear_equipos", "editar_equipos", "eliminar_equipos",
-        "gestionar_componentes", "ver_movimientos", "registrar_movimientos", "autorizar_movimientos",
-        "cancelar_movimientos", "ver_mantenimientos", "programar_mantenimientos", "editar_mantenimientos",
-        "eliminar_mantenimientos", "ver_documentos", "subir_documentos", "editar_documentos",
-        "verificar_documentos", "eliminar_documentos", "ver_inventario", "administrar_inventario_tipos",
-        "administrar_inventario_stock", "ver_licencias", "administrar_licencias", "asignar_licencias",
-        "administrar_software_catalogo", "ver_reservas", "reservar_equipos", "aprobar_reservas",
-        "administrar_usuarios", "administrar_roles", "administrar_catalogos", "generar_reportes",
-        "ver_auditoria", "configurar_sistema", "administrar_sistema", "ver_proveedores",
-        "editar_movimientos"
-        # añadi editar_movimientos
+        "administrar_catalogos", "administrar_inventario_stock", "administrar_inventario_tipos", "administrar_licencias", "administrar_roles",
+        "administrar_sistema", "administrar_software_catalogo", "administrar_usuarios", "aprobar_reservas", "asignar_licencias",
+        "autorizar_movimientos", "cancelar_movimientos", "configurar_sistema", "crear_equipos", "editar_documentos",
+        "editar_equipos", "editar_mantenimientos", "editar_movimientos", "eliminar_documentos", "eliminar_equipos",
+        "eliminar_mantenimientos", "generar_reportes", "gestionar_componentes", "programar_mantenimientos", "registrar_movimientos",
+        "reservar_equipos", "subir_documentos", "ver_auditoria", "ver_dashboard", "ver_documentos",
+        "ver_equipos", "ver_inventario", "ver_licencias", "ver_mantenimientos", "ver_movimientos",
+        "ver_proveedores", "ver_reservas", "verificar_documentos"
     ]
     permisos_dict = {}
     try:
@@ -203,7 +200,7 @@ def test_permisos_definidos(db: Session) -> Dict[str, Permiso]:
 def _ensure_rol_with_permissions(db: Session, rol_name: str, descripcion: str, required_perm_names: List[str], all_available_perms: Dict[str, Permiso]) -> Rol:
     logger.debug(f"Asegurando rol '{rol_name}' con {len(required_perm_names)} permisos requeridos...")
     rol = db.query(Rol).options(selectinload(Rol.permisos)).filter(Rol.nombre == rol_name).first()
-    
+
     required_perm_objects: Set[Permiso] = set()
     for name in required_perm_names:
         perm_obj = all_available_perms.get(name)
@@ -217,120 +214,107 @@ def _ensure_rol_with_permissions(db: Session, rol_name: str, descripcion: str, r
         db.add(rol)
         needs_db_interaction = True
     else:
-        logger.info(f"Rol '{rol_name}' (ID: {rol.id}) encontrado.") 
+        logger.info(f"Rol '{rol_name}' (ID: {rol.id}) encontrado.")
         current_perm_objects = set(rol.permisos)
         if current_perm_objects != required_perm_objects:
-            logger.warning(f"Rol '{rol_name}' (ID: {rol.id}) requiere actualización de permisos. Actuales: {len(current_perm_objects)} ({[p.nombre for p in sorted(list(current_perm_objects), key=lambda x: x.nombre)]}), Requeridos: {len(required_perm_objects)} ({sorted(required_perm_names)}).")
-            rol.permisos = list(required_perm_objects) # SQLAlchemy maneja el diff
+            logger.warning(f"Rol '{rol_name}' (ID: {rol.id}) requiere actualización de permisos. Actuales: {len(current_perm_objects)}, Requeridos: {len(required_perm_objects)}.")
+            rol.permisos = list(required_perm_objects)
             db.add(rol)
             needs_db_interaction = True
-        else: 
+        else:
             logger.debug(f"Rol '{rol_name}' (ID: {rol.id}) ya tiene los {len(required_perm_objects)} permisos correctos.")
-    
+
     if needs_db_interaction:
         try:
-            db.flush() 
-            db.refresh(rol) 
-            if rol.permisos is not None: 
+            db.flush()
+            db.refresh(rol)
+            if rol.permisos is not None:
                  db.refresh(rol, attribute_names=['permisos'])
             logger.info(f"Rol '{rol_name}' (ID: {rol.id}) asegurado/actualizado con {len(rol.permisos)} permisos.")
         except Exception as e:
             logger.critical(f"Error en flush/refresh para rol '{rol_name}': {e}", exc_info=True)
             db.rollback(); pytest.fail(f"Error crítico asegurando rol '{rol_name}': {e}")
-    
+
     final_perms_in_rol = {p.nombre for p in rol.permisos}
     if final_perms_in_rol != set(required_perm_names):
         missing = set(required_perm_names) - final_perms_in_rol
         extra = final_perms_in_rol - set(required_perm_names)
         error_msg = (f"Error Crítico en _ensure_rol_with_permissions para '{rol_name}': No tiene los permisos EXACTOS. "
-                     f"Esperados ({len(required_perm_names)}): {sorted(required_perm_names)}. "
-                     f"Obtenidos ({len(final_perms_in_rol)}): {sorted(list(final_perms_in_rol))}. "
                      f"Faltan: {missing if missing else 'Ninguno'}. Sobran: {extra if extra else 'Ninguno'}.")
         logger.critical(error_msg)
-        try:
-            logger.warning(f"Intentando un último refresh de permisos para el rol '{rol_name}' antes de fallar...")
-            db.refresh(rol, attribute_names=['permisos'])
-            final_perms_in_rol_after_refresh = {p.nombre for p in rol.permisos}
-            if final_perms_in_rol_after_refresh == set(required_perm_names):
-                logger.info(f"¡Éxito! El refresh adicional corrigió la carga de permisos para '{rol_name}'.")
-            else:
-                 logger.error(f"El refresh adicional NO corrigió la carga de permisos para '{rol_name}'. Fallando test.")
-                 pytest.fail(error_msg)
-        except Exception as refresh_err:
-             logger.error(f"Error durante el refresh de último recurso para '{rol_name}': {refresh_err}")
-             pytest.fail(error_msg + f" | Error en refresh adicional: {refresh_err}")
+        pytest.fail(error_msg)
 
-    logger.debug(f"Fin _ensure_rol_with_permissions para rol '{rol_name}' (ID: {rol.id}). Permisos: {[p.nombre for p in rol.permisos]}")
+    logger.debug(f"Fin _ensure_rol_with_permissions para rol '{rol_name}' (ID: {rol.id}).")
     return rol
+
+# ==============================================================================
+# DEFINICIÓN DE ROLES SINCRONIZADA
+# ==============================================================================
 
 @pytest.fixture(scope="function")
 def test_rol_admin(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    # 37 permisos
-    """Rol 'admin' con todos los permisos."""
+    """Rol 'admin' con 38 permisos (todos)."""
     all_perm_names = list(test_permisos_definidos.keys())
     return _ensure_rol_with_permissions(db, "admin", "Administrador con acceso total al sistema", all_perm_names, test_permisos_definidos)
 
 @pytest.fixture(scope="function")
 def test_rol_supervisor(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    """Rol 'supervisor' con permisos específicos."""
+    """Rol 'supervisor' con 34 permisos de gestión."""
     perm_names = [
-        'ver_dashboard', 'ver_equipos', 'crear_equipos', 'editar_equipos', 'eliminar_equipos', 
-        'gestionar_componentes', 'ver_movimientos', 'registrar_movimientos', 'autorizar_movimientos', 
-        'cancelar_movimientos', 'ver_mantenimientos', 'programar_mantenimientos', 'editar_mantenimientos', 
-        'eliminar_mantenimientos', 'ver_documentos', 'subir_documentos', 'editar_documentos', 
-        'verificar_documentos', 'eliminar_documentos', 'ver_inventario', 'administrar_inventario_tipos', 
-        'administrar_inventario_stock', 'ver_licencias', 'administrar_licencias', 'asignar_licencias', 
-        'administrar_software_catalogo', 'ver_reservas', 'reservar_equipos', 'aprobar_reservas', 
-        'generar_reportes', 'ver_proveedores', 'administrar_catalogos', 'administrar_usuarios', 'editar_movimientos'
+        'administrar_catalogos', 'administrar_inventario_stock', 'administrar_inventario_tipos',
+        'administrar_licencias', 'administrar_software_catalogo', 'administrar_usuarios',
+        'aprobar_reservas', 'asignar_licencias', 'autorizar_movimientos', 'cancelar_movimientos',
+        'crear_equipos', 'editar_documentos', 'editar_equipos', 'editar_mantenimientos',
+        'editar_movimientos', 'eliminar_documentos', 'eliminar_equipos', 'eliminar_mantenimientos',
+        'generar_reportes', 'gestionar_componentes', 'programar_mantenimientos',
+        'registrar_movimientos', 'reservar_equipos', 'subir_documentos', 'ver_dashboard',
+        'ver_documentos', 'ver_equipos', 'ver_inventario', 'ver_licencias', 'ver_mantenimientos',
+        'ver_movimientos', 'ver_proveedores', 'ver_reservas', 'verificar_documentos'
     ]
     return _ensure_rol_with_permissions(db, "supervisor", "Supervisor con gestión operativa y de recursos", perm_names, test_permisos_definidos)
 
 @pytest.fixture(scope="function")
-    # 13 permisos
-def test_rol_usuario_regular(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    """Rol 'usuario_regular' con permisos específicos."""
+def test_rol_tecnico(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
+    """Rol 'tecnico' con 14 permisos operativos."""
     perm_names = [
-        'ver_dashboard', 'ver_equipos', 'ver_movimientos',
-        'ver_mantenimientos', 'ver_documentos', 'subir_documentos', 
-        'ver_inventario', 'ver_licencias', 'ver_reservas', 'reservar_equipos', 'ver_proveedores'
+        'editar_mantenimientos', 'gestionar_componentes', 'programar_mantenimientos',
+        'registrar_movimientos', 'reservar_equipos', 'subir_documentos', 'ver_dashboard',
+        'ver_documentos', 'ver_equipos', 'ver_inventario', 'ver_licencias',
+        'ver_mantenimientos', 'ver_movimientos', 'ver_proveedores'
+    ]
+    return _ensure_rol_with_permissions(db, "tecnico", "Técnico de Mantenimiento o Soporte", perm_names, test_permisos_definidos)
+
+@pytest.fixture(scope="function")
+def test_rol_usuario_regular(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
+    """Rol 'usuario_regular' con 11 permisos de consulta y autoservicio."""
+    perm_names = [
+        'reservar_equipos', 'subir_documentos', 'ver_dashboard', 'ver_documentos',
+        'ver_equipos', 'ver_inventario', 'ver_licencias', 'ver_mantenimientos',
+        'ver_movimientos', 'ver_proveedores', 'ver_reservas'
     ]
     return _ensure_rol_with_permissions(db, "usuario_regular", "Usuario Estándar para operaciones diarias y consulta", perm_names, test_permisos_definidos)
 
 @pytest.fixture(scope="function")
 def test_rol_auditor(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    # 11 permisos
-    """Rol 'auditor' con permisos de solo lectura."""
+    """Rol 'auditor' con 11 permisos de solo lectura y auditoría."""
     perm_names = [
-        'ver_dashboard', 'ver_equipos', 'ver_movimientos', 'ver_mantenimientos', 'ver_documentos',
-        'ver_inventario', 'ver_licencias', 'ver_reservas', 'ver_proveedores', 'ver_auditoria', 'generar_reportes'
+        'generar_reportes', 'ver_auditoria', 'ver_dashboard', 'ver_documentos',
+        'ver_equipos', 'ver_inventario', 'ver_licencias', 'ver_mantenimientos',
+        'ver_movimientos', 'ver_proveedores', 'ver_reservas'
     ]
     return _ensure_rol_with_permissions(db, "auditor", "Auditor con permisos de solo lectura y consulta", perm_names, test_permisos_definidos)
 
 @pytest.fixture(scope="function")
-def test_rol_tecnico(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    # 14 permisos
-    """Rol 'tecnico' con permisos operativos."""
-    perm_names = [
-        'ver_equipos', 'gestionar_componentes', 'ver_movimientos', 'registrar_movimientos',
-        'ver_mantenimientos', 'programar_mantenimientos', 'editar_mantenimientos', 'ver_documentos',
-        'subir_documentos', 'ver_inventario', 'ver_licencias', 'ver_reservas', 'ver_proveedores'
-    ]
-    return _ensure_rol_with_permissions(db, "tecnico", "Técnico de Mantenimiento o Soporte", perm_names, test_permisos_definidos)
-
-@pytest.fixture(scope="function")
 def test_rol_tester(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    # 33 permisos
-    """Rol 'tester' con un amplio set de permisos para pruebas funcionales."""
-    perm_names = [ 
-        'ver_dashboard', 'ver_equipos', 'crear_equipos', 'editar_equipos', 'eliminar_equipos',
-        'gestionar_componentes', 'ver_movimientos', 'registrar_movimientos', 'autorizar_movimientos',
-        'cancelar_movimientos', 'editar_movimientos', 'ver_mantenimientos', 'programar_mantenimientos',
-        'editar_mantenimientos', 'eliminar_mantenimientos', 'ver_documentos', 'subir_documentos',
-        'editar_documentos', 'verificar_documentos', 'eliminar_documentos', 'ver_inventario',
-        'administrar_inventario_tipos', 'administrar_inventario_stock', 'ver_licencias',
-        'administrar_licencias', 'asignar_licencias', 'administrar_software_catalogo',
-        'ver_reservas', 'reservar_equipos', 'aprobar_reservas', 'ver_proveedores',
-        'administrar_catalogos', 'generar_reportes', 'ver_auditoria', 'administrar_usuarios', 'administrar_roles'
+    """Rol 'tester' con 36 permisos para pruebas funcionales."""
+    perm_names = [
+        'administrar_catalogos', 'administrar_inventario_stock', 'administrar_inventario_tipos', 'administrar_licencias',
+        'administrar_roles', 'administrar_software_catalogo', 'administrar_usuarios', 'aprobar_reservas', 'asignar_licencias',
+        'autorizar_movimientos', 'cancelar_movimientos', 'crear_equipos', 'editar_documentos', 'editar_equipos',
+        'editar_mantenimientos', 'editar_movimientos', 'eliminar_documentos', 'eliminar_equipos', 'eliminar_mantenimientos',
+        'generar_reportes', 'gestionar_componentes', 'programar_mantenimientos', 'registrar_movimientos', 'reservar_equipos',
+        'subir_documentos', 'ver_auditoria', 'ver_dashboard', 'ver_documentos', 'ver_equipos', 'ver_inventario',
+        'ver_licencias', 'ver_mantenimientos', 'ver_movimientos', 'ver_proveedores', 'ver_reservas', 'verificar_documentos'
     ]
     return _ensure_rol_with_permissions(db, "tester", "Rol para pruebas funcionales y de sistema", perm_names, test_permisos_definidos)
 
@@ -465,27 +449,27 @@ async def auth_token_tester(client: AsyncClient, test_tester_fixture: Usuario) -
 
 @pytest.fixture(scope="function")
 def test_estado_disponible(db: Session) -> EstadoEquipo:
-    logger.debug("Inicio fixture: test_estado_disponible") 
+    logger.debug("Inicio fixture: test_estado_disponible")
     nombre_estado = "Disponible"
     estado = db.query(EstadoEquipo).filter(EstadoEquipo.nombre == nombre_estado).first()
-    if not estado: 
+    if not estado:
         estado = EstadoEquipo(nombre=nombre_estado, permite_movimientos=True, color_hex="#4CAF50", es_estado_final=False) # type: ignore
         db.add(estado); db.flush(); db.refresh(estado)
     return estado
 
 @pytest.fixture(scope="function")
 def test_estado_en_uso(db: Session) -> EstadoEquipo:
-    logger.debug("Inicio fixture: test_estado_en_uso") 
+    logger.debug("Inicio fixture: test_estado_en_uso")
     nombre_estado = "En Uso"
     estado = db.query(EstadoEquipo).filter(EstadoEquipo.nombre == nombre_estado).first()
-    if not estado: 
+    if not estado:
         estado = EstadoEquipo(nombre=nombre_estado, permite_movimientos=True, color_hex="#2196F3", es_estado_final=False) # type: ignore
         db.add(estado); db.flush(); db.refresh(estado)
     return estado
 
 @pytest.fixture(scope="function")
 def test_estado_prestado(db: Session) -> EstadoEquipo:
-    logger.debug("Inicio fixture: test_estado_prestado") 
+    logger.debug("Inicio fixture: test_estado_prestado")
     nombre_estado = "Prestado"
     estado = db.query(EstadoEquipo).filter(EstadoEquipo.nombre == nombre_estado).first()
     if not estado:
@@ -495,7 +479,7 @@ def test_estado_prestado(db: Session) -> EstadoEquipo:
 
 @pytest.fixture(scope="function")
 def test_estado_mantenimiento(db: Session) -> EstadoEquipo:
-    logger.debug("Inicio fixture: test_estado_mantenimiento") 
+    logger.debug("Inicio fixture: test_estado_mantenimiento")
     nombre_estado = "En Mantenimiento"
     estado = db.query(EstadoEquipo).filter(EstadoEquipo.nombre == nombre_estado).first()
     if not estado:
@@ -505,27 +489,27 @@ def test_estado_mantenimiento(db: Session) -> EstadoEquipo:
 
 @pytest.fixture(scope="function")
 def test_tipo_doc_factura(db: Session) -> TipoDocumento:
-    logger.debug("Inicio fixture: test_tipo_doc_factura") 
+    logger.debug("Inicio fixture: test_tipo_doc_factura")
     nombre_tipo = "Factura Compra"
     tipo = db.query(TipoDocumento).filter(TipoDocumento.nombre == nombre_tipo).first()
-    if not tipo: 
+    if not tipo:
         tipo = TipoDocumento(nombre=nombre_tipo, requiere_verificacion=True, formato_permitido=['pdf', 'jpg', 'png', 'xml']) # type: ignore
         db.add(tipo); db.flush(); db.refresh(tipo)
     return tipo
 
 @pytest.fixture(scope="function")
 def test_tipo_doc_manual(db: Session) -> TipoDocumento:
-    logger.debug("Inicio fixture: test_tipo_doc_manual") 
+    logger.debug("Inicio fixture: test_tipo_doc_manual")
     nombre_tipo = "Manual Usuario"
     tipo = db.query(TipoDocumento).filter(TipoDocumento.nombre == nombre_tipo).first()
-    if not tipo: 
+    if not tipo:
         tipo = TipoDocumento(nombre=nombre_tipo, requiere_verificacion=False, formato_permitido=['pdf', 'docx']) # type: ignore
         db.add(tipo); db.flush(); db.refresh(tipo)
     return tipo
 
 @pytest.fixture(scope="function")
 def test_proveedor(db: Session) -> Proveedor:
-    logger.debug("Inicio fixture: test_proveedor") 
+    logger.debug("Inicio fixture: test_proveedor")
     nombre_prov = "Proveedor Test Fixture"
     rnc_prov = f"RNC-FIXTURE-{uuid4().hex[:5].upper()}"
     prov = db.query(Proveedor).filter(Proveedor.rnc == rnc_prov).first()
@@ -551,7 +535,7 @@ def generate_test_serie(prefix: str = "TEST") -> str:
 
 @pytest.fixture(scope="function")
 def test_equipo_reservable(db: Session, test_estado_disponible: EstadoEquipo, test_proveedor: Proveedor) -> Equipo:
-    logger.debug("Inicio fixture: test_equipo_reservable") 
+    logger.debug("Inicio fixture: test_equipo_reservable")
     serie = generate_test_serie("RSV")
     nombre_equipo = f"Proyector Test {serie}"
     equipo = db.query(Equipo).filter(Equipo.numero_serie == serie).first()
@@ -567,7 +551,7 @@ def test_equipo_reservable(db: Session, test_estado_disponible: EstadoEquipo, te
 
 @pytest.fixture(scope="function")
 def test_equipo_principal(db: Session, test_estado_disponible: EstadoEquipo) -> Equipo:
-    logger.debug("Inicio fixture: test_equipo_principal") 
+    logger.debug("Inicio fixture: test_equipo_principal")
     serie = generate_test_serie("PADRE")
     equipo = db.query(Equipo).filter(Equipo.numero_serie == serie).first()
     if not equipo:
@@ -577,7 +561,7 @@ def test_equipo_principal(db: Session, test_estado_disponible: EstadoEquipo) -> 
 
 @pytest.fixture(scope="function")
 def test_componente_ram(db: Session, test_estado_disponible: EstadoEquipo) -> Equipo:
-    logger.debug("Inicio fixture: test_componente_ram") 
+    logger.debug("Inicio fixture: test_componente_ram")
     serie_ram = generate_test_serie("RAM")
     equipo_ram_obj = db.query(Equipo).filter(Equipo.numero_serie == serie_ram).first()
     if not equipo_ram_obj:
@@ -590,19 +574,19 @@ def test_componente_ram(db: Session, test_estado_disponible: EstadoEquipo) -> Eq
 
 @pytest.fixture(scope="function")
 def test_notificacion_user(db: Session, test_usuario_regular_fixture: Usuario) -> Notificacion:
-    logger.debug("Inicio fixture: test_notificacion_user") 
+    logger.debug("Inicio fixture: test_notificacion_user")
     notif_msg = f"Mensaje test para {test_usuario_regular_fixture.nombre_usuario} - {uuid4().hex[:4]}"
     notif = db.query(Notificacion).filter(Notificacion.usuario_id == test_usuario_regular_fixture.id, Notificacion.mensaje == notif_msg).first() # type: ignore
     if not notif:
         notif = Notificacion(usuario_id=test_usuario_regular_fixture.id, mensaje=notif_msg, tipo=TipoNotificacionEnum.INFO.value, leido=False) # type: ignore
         db.add(notif); db.flush(); db.refresh(notif)
-    elif notif.leido: 
+    elif notif.leido:
         notif.leido = False; db.add(notif); db.flush(); db.refresh(notif) # type: ignore
     return notif
 
 @pytest.fixture(scope="function")
 def test_documento_pendiente(db: Session, test_equipo_reservable: Equipo, test_tipo_doc_factura: TipoDocumento, test_usuario_regular_fixture: Usuario) -> Documentacion:
-    logger.debug("Inicio fixture: test_documento_pendiente") 
+    logger.debug("Inicio fixture: test_documento_pendiente")
     titulo_doc = f"Factura Pendiente Test {test_equipo_reservable.numero_serie} - {uuid4().hex[:4]}"
     doc = db.query(Documentacion).filter(Documentacion.titulo == titulo_doc).first() # type: ignore
     if not doc:
@@ -619,27 +603,27 @@ def test_documento_pendiente(db: Session, test_equipo_reservable: Equipo, test_t
 
 @pytest.fixture(scope="function")
 def tipo_mantenimiento_preventivo(db: Session) -> TipoMantenimiento:
-    logger.debug("Inicio fixture: tipo_mantenimiento_preventivo") 
+    logger.debug("Inicio fixture: tipo_mantenimiento_preventivo")
     nombre_tipo = "Preventivo Test Fixture"
     tipo = db.query(TipoMantenimiento).filter(TipoMantenimiento.nombre == nombre_tipo).first()
-    if not tipo: 
+    if not tipo:
         tipo = TipoMantenimiento(nombre=nombre_tipo, es_preventivo=True, periodicidad_dias=90, descripcion="Mantenimiento preventivo de prueba.") # type: ignore
         db.add(tipo); db.flush(); db.refresh(tipo)
     return tipo
 
 @pytest.fixture(scope="function")
 def tipo_mantenimiento_correctivo(db: Session) -> TipoMantenimiento:
-    logger.debug("Inicio fixture: tipo_mantenimiento_correctivo") 
+    logger.debug("Inicio fixture: tipo_mantenimiento_correctivo")
     nombre_tipo = "Correctivo Test Fixture"
     tipo = db.query(TipoMantenimiento).filter(TipoMantenimiento.nombre == nombre_tipo).first()
-    if not tipo: 
+    if not tipo:
         tipo = TipoMantenimiento(nombre=nombre_tipo, es_preventivo=False, descripcion="Mantenimiento correctivo de prueba.") # type: ignore
         db.add(tipo); db.flush(); db.refresh(tipo)
     return tipo
 
 @pytest.fixture(scope="function")
 def proveedor_servicio_externo(db: Session) -> Proveedor:
-    logger.debug("Inicio fixture: proveedor_servicio_externo") 
+    logger.debug("Inicio fixture: proveedor_servicio_externo")
     nombre_prov = "Servicios Externos Test Fixture"
     rnc_prov = f"RNCEXT-{uuid4().hex[:6].upper()}"
     prov = db.query(Proveedor).filter(Proveedor.rnc == rnc_prov).first()
@@ -659,7 +643,7 @@ def proveedor_servicio_externo(db: Session) -> Proveedor:
 
 @pytest.fixture(scope="function")
 def tipo_item_toner(db: Session) -> TipoItemInventario:
-    logger.debug("Inicio fixture: tipo_item_toner") 
+    logger.debug("Inicio fixture: tipo_item_toner")
     nombre_item = "Toner Test Fixture"
     sku_test = f"TONER-FX-{nombre_item.replace(' ', '_').upper()}-{uuid4().hex[:4]}"
     item = db.query(TipoItemInventario).filter(TipoItemInventario.sku == sku_test).first()
@@ -673,7 +657,7 @@ def tipo_item_toner(db: Session) -> TipoItemInventario:
 
 @pytest.fixture(scope="function")
 async def stock_inicial_toner(db: Session, tipo_item_toner: TipoItemInventario) -> InventarioStock:
-    logger.debug("Inicio fixture: stock_inicial_toner") 
+    logger.debug("Inicio fixture: stock_inicial_toner")
     ubicacion_test = "Almacén Principal Toner Fixture"
     cantidad_inicial = 10
     costo_inicial = Decimal("25.50")
@@ -702,29 +686,29 @@ async def stock_inicial_toner(db: Session, tipo_item_toner: TipoItemInventario) 
 
 @pytest.fixture(scope="function")
 def software_office(db: Session) -> SoftwareCatalogo:
-    logger.debug("Inicio fixture: software_office") 
+    logger.debug("Inicio fixture: software_office")
     nombre_sw = "Microsoft Office Test Fixture"
     version_sw = "2021 Pro"
     sw = db.query(SoftwareCatalogo).filter(SoftwareCatalogo.nombre == nombre_sw, SoftwareCatalogo.version == version_sw).first() # type: ignore
-    if not sw: 
+    if not sw:
         sw = SoftwareCatalogo(nombre=nombre_sw, version=version_sw, tipo_licencia=TipoLicenciaSoftwareEnum.PERPETUA.value, metrica_licenciamiento=MetricaLicenciamientoEnum.POR_DISPOSITIVO.value, fabricante="Microsoft Test", categoria="Ofimática") # type: ignore
         db.add(sw); db.flush(); db.refresh(sw)
     return sw
 
 @pytest.fixture(scope="function")
 def software_win(db: Session) -> SoftwareCatalogo:
-    logger.debug("Inicio fixture: software_win") 
+    logger.debug("Inicio fixture: software_win")
     nombre_sw = "Windows Test Pro Fixture"
     version_sw = "11 Enterprise"
     sw = db.query(SoftwareCatalogo).filter(SoftwareCatalogo.nombre == nombre_sw, SoftwareCatalogo.version == version_sw).first() # type: ignore
-    if not sw: 
+    if not sw:
         sw = SoftwareCatalogo(nombre=nombre_sw, version=version_sw, fabricante="Microsoft Test", categoria="Sistema Operativo", tipo_licencia=TipoLicenciaSoftwareEnum.OEM.value, metrica_licenciamiento=MetricaLicenciamientoEnum.POR_DISPOSITIVO.value) # type: ignore
         db.add(sw); db.flush(); db.refresh(sw)
     return sw
 
 @pytest.fixture(scope="function")
 def licencia_office_disponible(db: Session, software_office: SoftwareCatalogo, test_proveedor: Proveedor) -> LicenciaSoftware:
-    logger.debug("Inicio fixture: licencia_office_disponible") 
+    logger.debug("Inicio fixture: licencia_office_disponible")
     nota_fixture = f"Fixture Test Office 5 Licencias - {software_office.id}-{uuid4().hex[:4]}"
     lic = db.query(LicenciaSoftware).options(selectinload(LicenciaSoftware.asignaciones)).filter(LicenciaSoftware.notas == nota_fixture).first() # type: ignore
     cantidad_total_test = 5
@@ -748,7 +732,7 @@ def licencia_office_disponible(db: Session, software_office: SoftwareCatalogo, t
 
 @pytest.fixture(scope="function")
 async def equipo_sin_licencia(db: Session, test_estado_disponible: EstadoEquipo) -> Equipo:
-    logger.debug("Inicio fixture: equipo_sin_licencia") 
+    logger.debug("Inicio fixture: equipo_sin_licencia")
     serie = generate_test_serie("NOLIC")
     equipo = db.query(Equipo).filter(Equipo.numero_serie == serie).first()
     if not equipo:
@@ -758,7 +742,7 @@ async def equipo_sin_licencia(db: Session, test_estado_disponible: EstadoEquipo)
 
 @pytest.fixture(scope="function")
 async def create_test_rol(db: Session, test_permisos_definidos: Dict[str, Permiso]) -> Rol:
-    logger.debug("Inicio fixture: create_test_rol") 
+    logger.debug("Inicio fixture: create_test_rol")
     permiso_ver_equipos = test_permisos_definidos.get("ver_equipos")
     if not permiso_ver_equipos:
         pytest.fail("Fixture 'test_permisos_definidos' no proporcionó 'ver_equipos'.")
@@ -782,7 +766,7 @@ async def create_test_rol(db: Session, test_permisos_definidos: Dict[str, Permis
 
 @pytest.fixture(scope="function")
 async def create_test_user_directly(db: Session, test_rol_usuario_regular: Rol) -> Usuario:
-    logger.debug("Inicio fixture: create_test_user_directly") 
+    logger.debug("Inicio fixture: create_test_user_directly")
     username = f"get_user_direct_{uuid4().hex[:6]}"
     email = f"{username}@example.com"
     if not test_rol_usuario_regular or not test_rol_usuario_regular.id:
@@ -805,7 +789,7 @@ async def create_test_user_directly(db: Session, test_rol_usuario_regular: Rol) 
 
 @pytest.fixture(scope="function")
 async def reserva_pendiente(db: Session, test_usuario_regular_fixture: Usuario, test_equipo_reservable: Equipo) -> ReservaEquipo:
-    logger.debug("Inicio fixture: reserva_pendiente") 
+    logger.debug("Inicio fixture: reserva_pendiente")
     start_time = datetime.now(timezone.utc) + timedelta(days=7, hours=1)
     end_time = start_time + timedelta(hours=2)
     

@@ -255,7 +255,6 @@ async def delete_documentacion(
             file_delete_attempted = True
             try:
                 # Modificar delete_uploaded_file para que quizás devuelva un status o usar try-except aquí
-                # Asumiendo que delete_uploaded_file lanza FileNotFoundError si no lo encuentra
                 await delete_uploaded_file(file_path_relative)
                 logger.info(f"Archivo físico '{file_path_relative}' eliminado correctamente para doc ID {doc_id}.")
                 file_actually_deleted = True

@@ -7,12 +7,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.schemas.backup_log import BackupLog as BackupLogSchema # Renombrar para claridad
+from app.schemas.backup_log import BackupLog as BackupLogSchema
 from app.services.backup_log import backup_log_service # Servicio ya revisado
 from app.models.usuario import Usuario as UsuarioModel # Para el usuario actual
 
 logger = logging.getLogger(__name__)
-# Permiso requerido (asegúrate que 'administrar_sistema' exista y sea el adecuado)
 PERM_ADMIN_SISTEMA = "administrar_sistema"
 
 router = APIRouter()

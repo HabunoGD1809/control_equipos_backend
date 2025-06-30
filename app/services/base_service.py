@@ -3,7 +3,7 @@ from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from pydantic import BaseModel, HttpUrl # Asegúrate que HttpUrl esté importado si lo usas aquí
+from pydantic import BaseModel, HttpUrl
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, select

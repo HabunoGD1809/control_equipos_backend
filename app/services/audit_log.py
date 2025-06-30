@@ -8,8 +8,6 @@ from sqlalchemy import select
 
 # Importar modelos
 from app.models.audit_log import AuditLog as AuditLogModel
-# El schema AuditLogSchema no se usa directamente en el servicio para las queries,
-# pero las rutas lo usarán para la validación de la respuesta.
 
 logger = logging.getLogger(__name__) # Configurar logger
 

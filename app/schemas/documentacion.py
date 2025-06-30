@@ -9,8 +9,8 @@ from .tipo_documento import TipoDocumento
 from .usuario import UsuarioSimple
 # Importar schemas simples de los objetos a los que se puede asociar
 from .equipo import EquipoSimple
-from .mantenimiento import MantenimientoSimple # Asegúrate que este schema simple exista
-from .licencia_software import LicenciaSoftwareSimple # Asegúrate que este schema simple exista
+from .mantenimiento import MantenimientoSimple 
+from .licencia_software import LicenciaSoftwareSimple
 
 ESTADOS_DOCUMENTO_VALIDOS = ['Pendiente', 'Verificado', 'Rechazado']
 

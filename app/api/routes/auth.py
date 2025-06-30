@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError # Para capturar errores de BD en la t
 
 from app.api import deps
 from app.schemas.token import Token
-from app.schemas.usuario import Usuario as UsuarioSchema # Renombrar para claridad
+from app.schemas.usuario import Usuario as UsuarioSchema
 from app.services.usuario import usuario_service
 from app.services.login_log import login_log_service # Servicio ya modificado
 from app.core import security

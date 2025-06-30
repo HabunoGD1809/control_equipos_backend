@@ -9,12 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 # Importar modelos/schemas si se necesita crear datos para filtrar
-from app.models.backup_log import BackupLog as BackupLogModel # Renombrar para evitar conflicto
+from app.models.backup_log import BackupLog as BackupLogModel
 
 # Marcar todos los tests en este módulo para usar asyncio
 pytestmark = pytest.mark.asyncio
-
-# Asumimos fixtures: auth_token_admin (tiene 'administrar_sistema'), auth_token_usuario_regular (no tiene)
 
 # --- Fixture para crear logs de backup de prueba ---
 @pytest.fixture(scope="function")

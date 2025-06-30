@@ -61,7 +61,6 @@ async def test_create_estado_equipo_duplicate_name(client: AsyncClient, auth_tok
 
 async def test_read_estados_equipo(client: AsyncClient, auth_token_usuario_regular: str):
     """Prueba listar estados (cualquier usuario autenticado debería poder)."""
-    # Asumiendo que no hay permisos específicos para leer catálogos
     headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     response = await client.get(f"{settings.API_V1_STR}/catalogos/estados-equipo/", headers=headers)
     assert response.status_code == 200

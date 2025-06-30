@@ -419,7 +419,7 @@ def delete_equipo_componente(
     logger.warning(f"Usuario '{current_user.nombre_usuario}' intentando eliminar relación de componente ID: {relacion_id}")
     # El servicio remove_relation (o remove) llamará a get_or_404 internamente.
     try:
-        equipo_componente_service.remove_relation(db=db, id=relacion_id) # Asumiendo que remove_relation existe
+        equipo_componente_service.remove_relation(db=db, id=relacion_id)
         db.commit()
         logger.info(f"Relación de componente ID {relacion_id} eliminada exitosamente.")
         return {"msg": "Relación de componente eliminada correctamente."}

@@ -8,7 +8,7 @@ from sqlalchemy.exc import IntegrityError # Importar IntegrityError directamente
 
 from app.api import deps
 from app.schemas.rol import Rol, RolCreate, RolUpdate
-from app.schemas.permiso import Permiso as PermisoSchema # Renombrar para evitar conflicto con el modelo
+from app.schemas.permiso import Permiso as PermisoSchema
 from app.schemas.common import Msg
 from app.services.rol import rol_service # Servicio ya modificado
 from app.services.permiso import permiso_service # Servicio ya modificado

@@ -12,9 +12,9 @@ from app.schemas.software_catalogo import SoftwareCatalogo, SoftwareCatalogoCrea
 from app.schemas.licencia_software import LicenciaSoftware, LicenciaSoftwareCreate, LicenciaSoftwareUpdate 
 from app.schemas.asignacion_licencia import AsignacionLicencia, AsignacionLicenciaCreate, AsignacionLicenciaUpdate
 from app.schemas.common import Msg
-from app.services.software_catalogo import software_catalogo_service # Asumimos que este servicio se revisará/modificará
+from app.services.software_catalogo import software_catalogo_service
 from app.services.licencia_software import licencia_software_service # Servicio ya modificado
-from app.services.asignacion_licencia import asignacion_licencia_service # Asumimos que este servicio se revisará/modificará
+from app.services.asignacion_licencia import asignacion_licencia_service
 from app.models.usuario import Usuario as UsuarioModel
 
 logger = logging.getLogger(__name__)
@@ -45,7 +45,6 @@ def create_software_catalogo_entry(
     """Crea un nuevo registro en el catálogo de software."""
     logger.info(f"Usuario '{current_user.nombre_usuario}' creando entrada de catálogo SW: {catalogo_in.nombre} v{catalogo_in.version}")
     try:
-        # Asumimos que software_catalogo_service.create() ya no hace commit
         # y maneja validaciones de unicidad (nombre/versión).
         catalogo = software_catalogo_service.create(db=db, obj_in=catalogo_in)
         db.commit()
@@ -81,7 +80,6 @@ def read_software_catalogo(
 ) -> Any:
     """Obtiene la lista de software definido en el catálogo."""
     logger.info(f"Usuario '{current_user.nombre_usuario}' listando catálogo de software.")
-    # Asumimos que software_catalogo_service.get_multi() está bien.
     return software_catalogo_service.get_multi(db, skip=skip, limit=limit)
 
 @router.get("/catalogo/{catalogo_id}",
@@ -116,7 +114,6 @@ def update_software_catalogo_entry(
     logger.info(f"Usuario '{current_user.nombre_usuario}' actualizando entrada de catálogo SW ID: {catalogo_id} con datos: {catalogo_in.model_dump(exclude_unset=True)}")
     db_catalogo = software_catalogo_service.get_or_404(db, id=catalogo_id) # Lanza 404
     try:
-        # Asumimos que software_catalogo_service.update() ya no hace commit.
         updated_catalogo = software_catalogo_service.update(db=db, db_obj=db_catalogo, obj_in=catalogo_in)
         db.commit()
         db.refresh(updated_catalogo)
@@ -155,7 +152,6 @@ def delete_software_catalogo_entry(
     catalogo_a_eliminar = software_catalogo_service.get_or_404(db, id=catalogo_id) # Para log y asegurar existencia
     nombre_catalogo_log = f"{catalogo_a_eliminar.nombre} v{catalogo_a_eliminar.version}"
     try:
-        # Asumimos que software_catalogo_service.remove() ya no hace commit
         # y puede lanzar HTTPException 409 si hay licencias asociadas (debido a FK RESTRICT).
         software_catalogo_service.remove(db=db, id=catalogo_id)
         db.commit()
@@ -355,7 +351,6 @@ def create_asignacion(
     """Asigna una licencia disponible a un equipo o a un usuario."""
     logger.info(f"Usuario '{current_user.nombre_usuario}' asignando licencia ID: {asignacion_in.licencia_id} a Equipo/Usuario.")
     try:
-        # Asumimos que asignacion_licencia_service.create() ya no hace commit
         # y maneja validaciones (disponibilidad, FKs, unicidad de asignación).
         # También debería llamar a la función de BD para decrementar cantidad_disponible.
         asignacion = asignacion_licencia_service.create(db=db, obj_in=asignacion_in)
@@ -441,7 +436,6 @@ def update_asignacion(
     logger.info(f"Usuario '{current_user.nombre_usuario}' actualizando asignación de licencia ID: {asignacion_id} con datos {asignacion_in.model_dump(exclude_unset=True)}")
     db_asignacion = asignacion_licencia_service.get_or_404(db, id=asignacion_id) # Lanza 404
     try:
-        # Asumimos que asignacion_licencia_service.update() ya no hace commit.
         updated_asignacion = asignacion_licencia_service.update(db=db, db_obj=db_asignacion, obj_in=asignacion_in)
         db.commit()
         db.refresh(updated_asignacion)
@@ -477,7 +471,6 @@ def delete_asignacion(
     asignacion_a_eliminar = asignacion_licencia_service.get_or_404(db, id=asignacion_id) # Para log y asegurar existencia
     lic_id_log = asignacion_a_eliminar.licencia_id
     try:
-        # Asumimos que asignacion_licencia_service.remove() ya no hace commit.
         # Y que el trigger AFTER DELETE en asignaciones_licencia se encarga de actualizar cantidad_disponible.
         asignacion_licencia_service.remove(db=db, id=asignacion_id)
         db.commit() # Commit aquí para que el trigger se dispare

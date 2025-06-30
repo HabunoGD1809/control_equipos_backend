@@ -241,7 +241,7 @@ def create_tipo_documento(
 ) -> Any:
     """Crea un nuevo tipo de documento."""
     logger.info(f"Intento de creación tipo documento '{tipo_in.nombre}' por usuario {current_user.nombre_usuario}")
-    existing = tipo_documento_service.get_by_name(db, name=tipo_in.nombre) # Asumiendo que existe get_by_name
+    existing = tipo_documento_service.get_by_name(db, name=tipo_in.nombre)
     if existing:
         logger.warning(f"Intento de crear tipo documento duplicado: {tipo_in.nombre}")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Ya existe un tipo de documento con el nombre '{tipo_in.nombre}'.")
@@ -294,7 +294,7 @@ def update_tipo_documento(
     logger.info(f"Intento de actualización tipo documento ID {tipo_id} por usuario {current_user.nombre_usuario} con datos: {tipo_in.model_dump(exclude_unset=True)}")
     db_tipo = tipo_documento_service.get_or_404(db, id=tipo_id)
     if tipo_in.nombre and tipo_in.nombre != db_tipo.nombre:
-        existing = tipo_documento_service.get_by_name(db, name=tipo_in.nombre) # Asumiendo get_by_name
+        existing = tipo_documento_service.get_by_name(db, name=tipo_in.nombre)
         if existing and existing.id != tipo_id:
             logger.warning(f"Conflicto de nombre al actualizar tipo documento ID {tipo_id} a '{tipo_in.nombre}'. Ya existe.")
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Ya existe un tipo de documento con el nombre '{tipo_in.nombre}'.")
@@ -378,7 +378,7 @@ def create_tipo_mantenimiento(
 ) -> Any:
     """Crea un nuevo tipo de mantenimiento."""
     logger.info(f"Intento de creación tipo mantenimiento '{tipo_in.nombre}' por usuario {current_user.nombre_usuario}")
-    existing = tipo_mantenimiento_service.get_by_name(db, name=tipo_in.nombre) # Asumiendo get_by_name
+    existing = tipo_mantenimiento_service.get_by_name(db, name=tipo_in.nombre)
     if existing:
         logger.warning(f"Intento de crear tipo mantenimiento duplicado: {tipo_in.nombre}")
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Ya existe un tipo de mantenimiento con el nombre '{tipo_in.nombre}'.")
@@ -431,7 +431,7 @@ def update_tipo_mantenimiento(
     logger.info(f"Intento de actualización tipo mantenimiento ID {tipo_id} por usuario {current_user.nombre_usuario} con datos: {tipo_in.model_dump(exclude_unset=True)}")
     db_tipo = tipo_mantenimiento_service.get_or_404(db, id=tipo_id)
     if tipo_in.nombre and tipo_in.nombre != db_tipo.nombre:
-        existing = tipo_mantenimiento_service.get_by_name(db, name=tipo_in.nombre) # Asumiendo get_by_name
+        existing = tipo_mantenimiento_service.get_by_name(db, name=tipo_in.nombre)
         if existing and existing.id != tipo_id:
             logger.warning(f"Conflicto de nombre al actualizar tipo mantenimiento ID {tipo_id} a '{tipo_in.nombre}'. Ya existe.")
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Ya existe un tipo de mantenimiento con el nombre '{tipo_in.nombre}'.")

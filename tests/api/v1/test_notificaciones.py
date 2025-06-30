@@ -15,8 +15,6 @@ from sqlalchemy.orm import Session
 # Marcar todos los tests en este módulo para usar asyncio
 pytestmark = pytest.mark.asyncio
 
-# Asumimos fixtures: test_usuario_regular_fixture, auth_token_usuario_regular, test_notificacion_user
-
 async def test_read_notificaciones_success(
     client: AsyncClient, auth_token_usuario_regular: str, test_notificacion_user: Notificacion
 ):

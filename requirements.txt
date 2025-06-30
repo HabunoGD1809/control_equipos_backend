@@ -4,10 +4,9 @@ uvicorn
 python-multipart
 
 # Base de datos
-# psycopg2-binary # Eliminado para usar psycopg v3 consistentemente
 SQLAlchemy
 alembic
-psycopg # Asegúrate de que sea una versión compatible con SQLAlchemy y tu PG
+psycopg
 
 # Seguridad
 python-jose[cryptography]
@@ -18,7 +17,7 @@ passlib[bcrypt] # Es más común usar passlib para el hashing de contraseñas
 # Serialización/Validación
 pydantic
 pydantic-settings
-email-validator  # Nombre correcto del paquete
+email-validator
 
 # Logging
 python-logging-loki  # Opcional
@@ -34,5 +33,5 @@ pytest
 pytest-asyncio
 httpx
 
-# Celery (si se usa)
+# Celery
 celery[redis]

@@ -90,3 +90,22 @@ class CategoriaItemInventarioEnum(str, Enum):
     PARTE_REPUESTO = 'Parte Repuesto'
     ACCESORIO = 'Accesorio'
     OTRO = 'Otro'
+
+# --- ENUMS NUEVOS ---
+class TipoMovimientoEquipoEnum(str, Enum):
+    """Valores que coinciden con el CHECK constraint de la tabla `movimientos`."""
+    SALIDA_TEMPORAL = 'Salida Temporal'
+    SALIDA_DEFINITIVA = 'Salida Definitiva'
+    ENTRADA = 'Entrada'
+    ASIGNACION_INTERNA = 'Asignacion Interna'
+    TRANSFERENCIA_BODEGA = 'Transferencia Bodega'
+
+class EstadoMovimientoEquipoEnum(str, Enum):
+    """Valores que coinciden con el CHECK constraint de la tabla `movimientos`."""
+    PENDIENTE = 'Pendiente'
+    AUTORIZADO = 'Autorizado'
+    EN_PROCESO = 'En Proceso'
+    COMPLETADO = 'Completado'
+    CANCELADO = 'Cancelado'
+    RECHAZADO = 'Rechazado'
+

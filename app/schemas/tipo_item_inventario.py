@@ -47,7 +47,7 @@ class TipoItemInventarioBase(BaseModel):
 # ===============================================================
 class TipoItemInventarioCreate(TipoItemInventarioBase):
     """Schema utilizado para crear un nuevo tipo de ítem de inventario."""
-    pass  # Hereda todos los campos y validaciones de la clase base.
+    pass
 
 
 # ===============================================================
@@ -104,3 +104,11 @@ class TipoItemInventarioSimple(BaseModel):
     modelo: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+# ===============================================================
+# Schema para la respuesta de items con bajo stock
+# ===============================================================
+class TipoItemInventarioConStock(TipoItemInventario):
+    """Extiende el schema base para incluir el stock total actual en la respuesta."""
+    stock_total_actual: int
+    

@@ -2,20 +2,18 @@ import uuid
 from typing import Optional
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator, AnyHttpUrl, model_validator
+from pydantic import BaseModel, Field, model_validator, ConfigDict
 
-# Importar schemas relacionados para anidamiento/referencias
+from .enums import EstadoDocumentoEnum
 from .tipo_documento import TipoDocumento
 from .usuario import UsuarioSimple
-# Importar schemas simples de los objetos a los que se puede asociar
 from .equipo import EquipoSimple
-from .mantenimiento import MantenimientoSimple 
+from .mantenimiento import MantenimientoSimple
 from .licencia_software import LicenciaSoftwareSimple
-
-ESTADOS_DOCUMENTO_VALIDOS = ['Pendiente', 'Verificado', 'Rechazado']
 
 # --- Schema Base ---
 class DocumentacionBase(BaseModel):
+    """Campos base que definen un registro de documentación."""
     titulo: str = Field(..., max_length=255, description="Título descriptivo del documento")
     descripcion: Optional[str] = Field(None, description="Descripción adicional del contenido")
     tipo_documento_id: uuid.UUID = Field(..., description="ID del Tipo de Documento")
@@ -23,13 +21,11 @@ class DocumentacionBase(BaseModel):
     mantenimiento_id: Optional[uuid.UUID] = Field(None, description="ID del Mantenimiento asociado (opcional)")
     licencia_id: Optional[uuid.UUID] = Field(None, description="ID de la Licencia asociada (opcional)")
 
-    # ===== INICIO DE LA CORRECCIÓN =====
     @model_validator(mode='after')
     def check_association(self) -> 'DocumentacionBase':
         if self.equipo_id is None and self.mantenimiento_id is None and self.licencia_id is None:
             raise ValueError("El documento debe estar asociado al menos a un Equipo, Mantenimiento o Licencia.")
         return self
-    # ===== FIN DE LA CORRECCIÓN =====
 
 # --- Schema para Creación (INTERNA) ---
 class DocumentacionCreateInternal(DocumentacionBase):
@@ -41,23 +37,26 @@ class DocumentacionCreateInternal(DocumentacionBase):
 
 # --- Schema para Actualización ---
 class DocumentacionUpdate(BaseModel):
+    """Schema para actualizar metadatos de un documento."""
     titulo: Optional[str] = Field(None, max_length=255)
     descripcion: Optional[str] = None
     tipo_documento_id: Optional[uuid.UUID] = None
 
 # --- Schema específico para la acción de Verificar/Rechazar ---
 class DocumentacionVerify(BaseModel):
-    estado: str = Field(..., description=f"Nuevo estado: 'Verificado' o 'Rechazado'")
+    """Schema para verificar o rechazar un documento."""
+    estado: EstadoDocumentoEnum = Field(..., description="Nuevo estado. Solo 'Verificado' o 'Rechazado' son válidos para esta acción.")
     notas_verificacion: Optional[str] = Field(None, description="Notas o motivo de la verificación/rechazo")
 
-    @field_validator('estado')
-    def estado_valido(cls, v):
-        if v not in ['Verificado', 'Rechazado']:
-            raise ValueError("El estado debe ser 'Verificado' o 'Rechazado'")
-        return v
+    @model_validator(mode='after')
+    def estado_valido_para_accion(self) -> 'DocumentacionVerify':
+        if self.estado not in [EstadoDocumentoEnum.VERIFICADO, EstadoDocumentoEnum.RECHAZADO]:
+            raise ValueError("Para esta acción, el estado debe ser 'Verificado' o 'Rechazado'.")
+        return self
 
 # --- Schema Interno DB ---
 class DocumentacionInDBBase(DocumentacionBase):
+    """Schema que refleja el modelo completo de la BD."""
     id: uuid.UUID
     enlace: str
     nombre_archivo: Optional[str]
@@ -65,18 +64,16 @@ class DocumentacionInDBBase(DocumentacionBase):
     tamano_bytes: Optional[int]
     fecha_subida: datetime
     subido_por: Optional[uuid.UUID]
-    estado: str
+    estado: EstadoDocumentoEnum
     verificado_por: Optional[uuid.UUID]
     fecha_verificacion: Optional[datetime]
     notas_verificacion: Optional[str]
 
-    model_config = {
-       "from_attributes": True
-    }
+    model_config = ConfigDict(from_attributes=True)
 
-# --- Schema para Respuesta API (MODIFICADO) ---
-# Lo que se devuelve al usuario cuando consulta sus notificaciones
+# --- Schema para Respuesta API ---
 class Documentacion(DocumentacionInDBBase):
+    """Schema de respuesta completo que anida información de relaciones."""
     tipo_documento: TipoDocumento
     subido_por_usuario: Optional[UsuarioSimple] = None
     verificado_por_usuario: Optional[UsuarioSimple] = None
@@ -86,10 +83,9 @@ class Documentacion(DocumentacionInDBBase):
 
 # --- Schema Simple ---
 class DocumentacionSimple(BaseModel):
+    """Schema simplificado para referencias en otros objetos."""
     id: uuid.UUID
     titulo: str
     nombre_archivo: Optional[str] = None
 
-    model_config = {
-       "from_attributes": True
-    }
+    model_config = ConfigDict(from_attributes=True)

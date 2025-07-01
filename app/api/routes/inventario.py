@@ -17,7 +17,7 @@ except ImportError:
 
 from app.api import deps
 from app.schemas.tipo_item_inventario import (
-    TipoItemInventario, TipoItemInventarioCreate, TipoItemInventarioUpdate,
+    TipoItemInventario, TipoItemInventarioCreate, TipoItemInventarioUpdate, TipoItemInventarioConStock
 )
 from app.schemas.inventario_stock import InventarioStock, InventarioStockUpdate, InventarioStockTotal
 from app.schemas.inventario_movimiento import InventarioMovimiento, InventarioMovimientoCreate
@@ -90,7 +90,7 @@ def read_tipos_item_inventario(
     return tipo_item_inventario_service.get_multi(db, skip=skip, limit=limit)
 
 @router.get("/tipos/bajo-stock/",
-            response_model=List[Dict[str, Any]],
+            response_model=List[TipoItemInventarioConStock],
             dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV, PERM_ADMIN_STOCK_INV]))],
             summary="Listar Items con Bajo Stock",
             )
@@ -198,16 +198,12 @@ def read_inventario_stock(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=200),
     ubicacion: Optional[str] = Query(None, description="Filtrar por ubicación específica"),
-    # ===== INICIO CORRECCIÓN =====
     lote: Optional[str] = Query(None, description="Filtrar por lote específico"),
-    # ===== FIN CORRECCIÓN =====
     tipo_item_id: Optional[PyUUID] = Query(None, description="Filtrar por ID de tipo de item"),
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
     logger.info(f"Usuario '{current_user.nombre_usuario}' consultando stock con filtros: ubicacion='{ubicacion}', lote='{lote}', tipo_item_id='{tipo_item_id}'.")
     
-    # ===== INICIO CORRECCIÓN =====
-    # Modificar la lógica para manejar el filtro por lote correctamente
     stock_records = inventario_stock_service.get_multi_by_filters(
         db,
         tipo_item_id=tipo_item_id,
@@ -217,7 +213,6 @@ def read_inventario_stock(
         limit=limit
     )
     return stock_records
-    # ===== FIN CORRECCIÓN =====
 
 @router.get("/stock/item/{tipo_item_id}/total",
             response_model=InventarioStockTotal,
@@ -324,9 +319,7 @@ def create_inventario_movimiento(
 
         logger.error(f"Error de base de datos (ProgrammingError) creando movimiento: {pg_error_detail or str(e)}", exc_info=True)
 
-        # ===== INICIO DE LA CORRECCIÓN =====
         if error_message_from_db and "stock insuficiente" in error_message_from_db.lower():
-        # ===== FIN DE LA CORRECCIÓN =====
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error_message_from_db)
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"No se pudo procesar el movimiento: {error_message_from_db}")

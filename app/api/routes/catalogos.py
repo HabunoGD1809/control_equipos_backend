@@ -1,5 +1,5 @@
 import logging
-from typing import Any, List, Optional # Optional no se usa directamente aquí pero es buena práctica general
+from typing import Any, List, Optional
 from uuid import UUID as PyUUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,7 +13,7 @@ from app.schemas.tipo_documento import TipoDocumento as TipoDocumentoSchema, Tip
 from app.schemas.tipo_mantenimiento import TipoMantenimiento as TipoMantenimientoSchema, TipoMantenimientoCreate, TipoMantenimientoUpdate
 from app.schemas.common import Msg
 # Importar Servicios específicos
-from app.services.estado_equipo import estado_equipo_service # Ya usa el BaseService modificado
+from app.services.estado_equipo import estado_equipo_service
 from app.services.tipo_documento import tipo_documento_service
 from app.services.tipo_mantenimiento import tipo_mantenimiento_service
 from app.models.usuario import Usuario as UsuarioModel
@@ -35,7 +35,6 @@ PERM_VER_CATALOGOS = Depends(deps.get_current_active_user)
              status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
              summary="Crear Nuevo Estado de Equipo",
-            #  tags=["catalogos", "estados_equipo"],
              response_description="El estado de equipo creado.")
 def create_estado_equipo(
     *,
@@ -57,16 +56,13 @@ def create_estado_equipo(
             detail=f"Ya existe un estado de equipo con el nombre '{estado_in.nombre}'.",
         )
     try:
-        # El servicio .create() ya no hace commit
         estado = estado_equipo_service.create(db=db, obj_in=estado_in)
         db.commit()
-        db.refresh(estado) # Refrescar para obtener cualquier dato generado por la BD (si aplica)
+        db.refresh(estado)
         logger.info(f"Estado de equipo creado: {estado.nombre} (ID: {estado.id}) por {current_user.nombre_usuario}")
         return estado
     except IntegrityError as e:
         db.rollback()
-        # El error_handler global podría capturar esto, pero ser explícito aquí es bueno.
-        # Detallar si el error es por la constraint 'uq_estados_equipo_nombre' u otra.
         if "uq_estados_equipo_nombre" in str(e.orig).lower():
             logger.warning(f"Error de integridad (nombre duplicado) al crear estado equipo '{estado_in.nombre}': {e.orig}", exc_info=False)
             raise HTTPException(
@@ -78,7 +74,7 @@ def create_estado_equipo(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error de base de datos al crear el estado de equipo.",
         )
-    except HTTPException: # Re-lanzar HTTPExceptions conocidas
+    except HTTPException:
         raise
     except Exception as e:
         db.rollback()
@@ -92,7 +88,6 @@ def create_estado_equipo(
             response_model=List[EstadoEquipoSchema],
             dependencies=[PERM_VER_CATALOGOS],
             summary="Listar Estados de Equipo",
-            # tags=["catalogos", "estados_equipo"],
             response_description="Una lista de todos los estados de equipo.")
 def read_estados_equipo(
     db: Session = Depends(deps.get_db),
@@ -107,7 +102,6 @@ def read_estados_equipo(
             response_model=EstadoEquipoSchema,
             dependencies=[PERM_VER_CATALOGOS],
             summary="Obtener Estado de Equipo por ID",
-            # tags=["catalogos", "estados_equipo"],
             response_description="Información detallada del estado.")
 def read_estado_equipo_by_id(
     estado_id: PyUUID,
@@ -121,7 +115,6 @@ def read_estado_equipo_by_id(
             response_model=EstadoEquipoSchema,
             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
             summary="Actualizar Estado de Equipo",
-            # tags=["catalogos", "estados_equipo"],
             response_description="El estado de equipo actualizado.")
 def update_estado_equipo(
     *,
@@ -136,11 +129,10 @@ def update_estado_equipo(
 
     if estado_in.nombre and estado_in.nombre != db_estado.nombre:
         existing = estado_equipo_service.get_by_nombre(db, nombre=estado_in.nombre)
-        if existing and existing.id != estado_id: # Asegurarse que no sea el mismo objeto
-             logger.warning(f"Conflicto de nombre al actualizar estado ID {estado_id} a '{estado_in.nombre}'. Ya existe.")
-             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Ya existe un estado de equipo con el nombre '{estado_in.nombre}'.")
+        if existing and existing.id != estado_id:
+            logger.warning(f"Conflicto de nombre al actualizar estado ID {estado_id} a '{estado_in.nombre}'. Ya existe.")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Ya existe un estado de equipo con el nombre '{estado_in.nombre}'.")
     try:
-        # El servicio .update() ya no hace commit
         updated_estado = estado_equipo_service.update(db=db, db_obj=db_estado, obj_in=estado_in)
         db.commit()
         db.refresh(updated_estado)
@@ -156,7 +148,7 @@ def update_estado_equipo(
             )
         logger.error(f"Error de integridad no esperado al actualizar estado equipo ID {estado_id}: {e.orig}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error de base de datos al actualizar estado: {getattr(e, 'orig', e)}")
-    except HTTPException: # Re-lanzar HTTPExceptions conocidas (ej: 404 de get_or_404)
+    except HTTPException:
         raise
     except Exception as e:
         db.rollback()
@@ -168,7 +160,6 @@ def update_estado_equipo(
                dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar Estado de Equipo",
-            #    tags=["catalogos", "estados_equipo"],
                response_description="Mensaje de confirmación o error.")
 def delete_estado_equipo(
     *,
@@ -183,28 +174,18 @@ def delete_estado_equipo(
     """
     logger.warning(f"Intento de eliminación estado equipo ID: {estado_id} por usuario {current_user.nombre_usuario}")
     
-    # Opcional: Usar el método de servicio check_if_can_be_deleted si se implementa allí
-    # try:
-    #     estado_equipo_service.check_if_can_be_deleted(db, estado_id=estado_id)
-    # except HTTPException as e: # Si el chequeo del servicio lanza HTTPException (ej. 409)
-    #     raise e # Relanzar directamente
-
     estado_nombre_para_log = "desconocido"
     try:
-        db_estado = estado_equipo_service.get_or_404(db, id=estado_id) # Obtener para log y mensaje
+        db_estado = estado_equipo_service.get_or_404(db, id=estado_id)
         estado_nombre_para_log = db_estado.nombre
         
-        # El servicio .remove() ya no hace commit
         estado_equipo_service.remove(db=db, id=estado_id)
         db.commit()
         logger.info(f"Estado de equipo '{estado_nombre_para_log}' (ID: {estado_id}) eliminado por {current_user.nombre_usuario}.")
         return {"msg": f"Estado de equipo '{estado_nombre_para_log}' eliminado correctamente."}
-    except IntegrityError as e: # Error si está en uso (FK restrict)
+    except IntegrityError as e:
         db.rollback()
         logger.warning(f"Intento de eliminar estado equipo '{estado_nombre_para_log}' (ID: {estado_id}) en uso: {e.orig}", exc_info=False)
-        # Verificar si es por FK (psycopg puede dar 'ForeignViolation', SQLAlchemy lo envuelve)
-        # El manejador global de errores debería poder dar un mensaje más específico
-        # basado en el pgcode o el mensaje de la excepción original.
         if "violates foreign key constraint" in str(e.orig).lower():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -215,7 +196,7 @@ def delete_estado_equipo(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error de base de datos al eliminar el estado '{estado_nombre_para_log}'.",
         )
-    except HTTPException: # Re-lanzar HTTPExceptions conocidas (ej: 404 de get_or_404)
+    except HTTPException:
         raise
     except Exception as e:
         db.rollback()
@@ -224,14 +205,13 @@ def delete_estado_equipo(
 
 
 # ==============================================================================
-# Endpoints para TIPOS DE DOCUMENTO (Aplicar patrón similar)
+# Endpoints para TIPOS DE DOCUMENTO
 # ==============================================================================
 @router.post("/tipos-documento/",
              response_model=TipoDocumentoSchema,
              status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
              summary="Crear Tipo de Documento",
-             
              )
 def create_tipo_documento(
     *,
@@ -253,7 +233,7 @@ def create_tipo_documento(
         return tipo_doc
     except IntegrityError as e:
         db.rollback()
-        if "uq_tipos_documento_nombre" in str(e.orig).lower(): # Ajustar al nombre real de la constraint
+        if "uq_tipos_documento_nombre" in str(e.orig).lower():
             logger.warning(f"Error de integridad (nombre duplicado) al crear tipo documento '{tipo_in.nombre}': {e.orig}", exc_info=False)
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Conflicto: Ya existe un tipo de documento con el nombre '{tipo_in.nombre}'.")
         logger.error(f"Error de integridad no esperado al crear tipo documento '{tipo_in.nombre}': {e.orig}", exc_info=True)
@@ -269,7 +249,6 @@ def create_tipo_documento(
             response_model=List[TipoDocumentoSchema],
             dependencies=[PERM_VER_CATALOGOS],
             summary="Listar Tipos de Documento",
-            
             )
 def read_tipos_documento(
     db: Session = Depends(deps.get_db), skip: int = 0, limit: int = 100,
@@ -277,11 +256,25 @@ def read_tipos_documento(
     """Obtiene la lista de todos los tipos de documento."""
     return tipo_documento_service.get_multi(db, skip=skip, limit=limit)
 
+# ==========================================================
+# ======> RUTA GET BY ID AÑADIDA PARA TIPOS DE DOCUMENTO <=====
+# ==========================================================
+@router.get("/tipos-documento/{tipo_id}",
+            response_model=TipoDocumentoSchema,
+            dependencies=[PERM_VER_CATALOGOS],
+            summary="Obtener Tipo de Documento por ID")
+def read_tipo_documento_by_id(
+    tipo_id: PyUUID,
+    db: Session = Depends(deps.get_db)
+) -> Any:
+    """Obtiene un tipo de documento específico por su ID."""
+    tipo_doc = tipo_documento_service.get_or_404(db, id=tipo_id)
+    return tipo_doc
+
 @router.put("/tipos-documento/{tipo_id}",
             response_model=TipoDocumentoSchema,
             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
             summary="Actualizar Tipo de Documento",
-            
             )
 def update_tipo_documento(
     *,
@@ -306,7 +299,7 @@ def update_tipo_documento(
         return updated_tipo
     except IntegrityError as e:
         db.rollback()
-        if "uq_tipos_documento_nombre" in str(e.orig).lower(): # Ajustar al nombre real de la constraint
+        if "uq_tipos_documento_nombre" in str(e.orig).lower():
             logger.warning(f"Error de integridad (nombre duplicado) al actualizar tipo documento ID {tipo_id}: {e.orig}", exc_info=False)
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Conflicto: Ya existe un tipo de documento con el nombre proporcionado.")
         logger.error(f"Error de integridad no esperado al actualizar tipo documento ID {tipo_id}: {e.orig}", exc_info=True)
@@ -323,7 +316,6 @@ def update_tipo_documento(
                dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar Tipo de Documento",
-               
                )
 def delete_tipo_documento(
     *,
@@ -337,9 +329,6 @@ def delete_tipo_documento(
     try:
         db_tipo = tipo_documento_service.get_or_404(db, id=tipo_id)
         tipo_nombre_para_log = db_tipo.nombre
-
-        # Aquí se podría añadir una llamada a un método `check_if_can_be_deleted` del servicio
-        # tipo_documento_service.check_if_can_be_deleted(db, tipo_id=tipo_id)
         
         tipo_documento_service.remove(db=db, id=tipo_id)
         db.commit()
@@ -361,14 +350,13 @@ def delete_tipo_documento(
 
 
 # ==============================================================================
-# Endpoints para TIPOS DE MANTENIMIENTO (Aplicar patrón similar)
+# Endpoints para TIPOS DE MANTENIMIENTO
 # ==============================================================================
 @router.post("/tipos-mantenimiento/",
              response_model=TipoMantenimientoSchema,
              status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
              summary="Crear Tipo de Mantenimiento",
-            #  tags=["catalogos", "tipos_mantenimiento"]
              )
 def create_tipo_mantenimiento(
     *,
@@ -390,7 +378,7 @@ def create_tipo_mantenimiento(
         return tipo_mant
     except IntegrityError as e:
         db.rollback()
-        if "uq_tipos_mantenimiento_nombre" in str(e.orig).lower(): # Ajustar al nombre real de la constraint
+        if "uq_tipos_mantenimiento_nombre" in str(e.orig).lower():
             logger.warning(f"Error de integridad (nombre duplicado) al crear tipo mantenimiento '{tipo_in.nombre}': {e.orig}", exc_info=False)
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Conflicto: Ya existe un tipo de mantenimiento con el nombre '{tipo_in.nombre}'.")
         logger.error(f"Error de integridad no esperado al crear tipo mantenimiento '{tipo_in.nombre}': {e.orig}", exc_info=True)
@@ -406,7 +394,6 @@ def create_tipo_mantenimiento(
             response_model=List[TipoMantenimientoSchema],
             dependencies=[PERM_VER_CATALOGOS],
             summary="Listar Tipos de Mantenimiento",
-            # tags=["catalogos", "tipos_mantenimiento"]
             )
 def read_tipos_mantenimiento(
     db: Session = Depends(deps.get_db), skip: int = 0, limit: int = 100,
@@ -414,11 +401,25 @@ def read_tipos_mantenimiento(
     """Obtiene la lista de todos los tipos de mantenimiento."""
     return tipo_mantenimiento_service.get_multi(db, skip=skip, limit=limit)
 
+# =============================================================
+# ======> RUTA GET BY ID AÑADIDA PARA TIPOS DE MANTENIMIENTO <=====
+# =============================================================
+@router.get("/tipos-mantenimiento/{tipo_id}",
+            response_model=TipoMantenimientoSchema,
+            dependencies=[PERM_VER_CATALOGOS],
+            summary="Obtener Tipo de Mantenimiento por ID")
+def read_tipo_mantenimiento_by_id(
+    tipo_id: PyUUID,
+    db: Session = Depends(deps.get_db)
+) -> Any:
+    """Obtiene un tipo de mantenimiento específico por su ID."""
+    tipo_mant = tipo_mantenimiento_service.get_or_404(db, id=tipo_id)
+    return tipo_mant
+
 @router.put("/tipos-mantenimiento/{tipo_id}",
             response_model=TipoMantenimientoSchema,
             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
             summary="Actualizar Tipo de Mantenimiento",
-            # tags=["catalogos", "tipos_mantenimiento"]
             )
 def update_tipo_mantenimiento(
     *,
@@ -443,7 +444,7 @@ def update_tipo_mantenimiento(
         return updated_tipo
     except IntegrityError as e:
         db.rollback()
-        if "uq_tipos_mantenimiento_nombre" in str(e.orig).lower(): # Ajustar al nombre real de la constraint
+        if "uq_tipos_mantenimiento_nombre" in str(e.orig).lower():
             logger.warning(f"Error de integridad (nombre duplicado) al actualizar tipo mantenimiento ID {tipo_id}: {e.orig}", exc_info=False)
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Conflicto: Ya existe un tipo de mantenimiento con el nombre proporcionado.")
         logger.error(f"Error de integridad no esperado al actualizar tipo mantenimiento ID {tipo_id}: {e.orig}", exc_info=True)
@@ -460,7 +461,6 @@ def update_tipo_mantenimiento(
                dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar Tipo de Mantenimiento",
-            #    tags=["catalogos", "tipos_mantenimiento"]
                )
 def delete_tipo_mantenimiento(
     *,
@@ -475,9 +475,6 @@ def delete_tipo_mantenimiento(
         db_tipo = tipo_mantenimiento_service.get_or_404(db, id=tipo_id)
         tipo_nombre_para_log = db_tipo.nombre
         
-        # Aquí se podría añadir una llamada a un método `check_if_can_be_deleted` del servicio
-        # tipo_mantenimiento_service.check_if_can_be_deleted(db, tipo_id=tipo_id)
-
         tipo_mantenimiento_service.remove(db=db, id=tipo_id)
         db.commit()
         logger.info(f"Tipo de mantenimiento '{tipo_nombre_para_log}' (ID: {tipo_id}) eliminado por {current_user.nombre_usuario}.")

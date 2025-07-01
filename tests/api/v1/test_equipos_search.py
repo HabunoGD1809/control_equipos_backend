@@ -33,7 +33,8 @@ async def test_search_global(
 ):
     """Prueba la búsqueda global."""
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
-    search_term = test_equipo_principal.numero_serie.split("-")[1]
+
+    search_term = "Principal"
 
     response = await client.get(
         f"{settings.API_V1_STR}/equipos/search/global",

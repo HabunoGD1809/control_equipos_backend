@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.models.equipo import Equipo
 from app.models.estado_equipo import EstadoEquipo
 from app.models.movimiento import Movimiento
+from app.schemas.enums import TipoMovimientoEquipoEnum
 from app.schemas.movimiento import MovimientoCreate, MovimientoUpdate
 from app.models.usuario import Usuario
 
@@ -45,7 +46,7 @@ async def test_create_movimiento_asignacion_success(
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     movimiento_schema = MovimientoCreate(
         equipo_id=equipo_para_movimiento.id,
-        tipo_movimiento="Asignacion Interna",
+        tipo_movimiento=TipoMovimientoEquipoEnum.ASIGNACION_INTERNA,
         origen="Almacén IT",
         destino="Usuario Test Destino",
         proposito="Asignación para proyecto X",
@@ -77,7 +78,7 @@ async def test_create_movimiento_salida_temporal_success(
     fecha_retorno_prevista = datetime.now(timezone.utc) + timedelta(days=7)
     movimiento_schema = MovimientoCreate(
         equipo_id=equipo_para_movimiento.id,
-        tipo_movimiento="Salida Temporal",
+        tipo_movimiento=TipoMovimientoEquipoEnum.SALIDA_TEMPORAL,
         origen="Almacén IT",
         destino="Cliente Externo Y",
         proposito="Préstamo para demo",
@@ -105,7 +106,7 @@ async def test_create_movimiento_no_permission(
 ):
     headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     movimiento_schema = MovimientoCreate(
-        equipo_id=equipo_para_movimiento.id, tipo_movimiento="Asignacion Interna",
+        equipo_id=equipo_para_movimiento.id, tipo_movimiento=TipoMovimientoEquipoEnum.ASIGNACION_INTERNA,
         origen="Origen", destino="Destino", proposito="Test",
         fecha_prevista_retorno=None, recibido_por=None, observaciones=None
     )
@@ -119,7 +120,7 @@ async def test_create_movimiento_equipo_not_found(
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     invalid_equipo_id = uuid4()
     movimiento_schema = MovimientoCreate(
-        equipo_id=invalid_equipo_id, tipo_movimiento="Asignacion Interna",
+        equipo_id=invalid_equipo_id, tipo_movimiento=TipoMovimientoEquipoEnum.ASIGNACION_INTERNA,
         origen="Origen", destino="Destino", proposito="Test",
         fecha_prevista_retorno=None, recibido_por=None, observaciones=None
     )
@@ -134,7 +135,7 @@ async def test_create_movimiento_missing_data_for_type(
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     movimiento_schema = MovimientoCreate(
         equipo_id=equipo_para_movimiento.id,
-        tipo_movimiento="Salida Temporal",
+        tipo_movimiento=TipoMovimientoEquipoEnum.SALIDA_TEMPORAL,
         origen=None, destino=None, proposito=None, fecha_prevista_retorno=None,
         recibido_por=None, observaciones=None
     )
@@ -148,7 +149,7 @@ async def test_read_movimientos_success(
 ):
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     movimiento_schema = MovimientoCreate(
-        equipo_id=equipo_para_movimiento.id, tipo_movimiento="Asignacion Interna",
+        equipo_id=equipo_para_movimiento.id, tipo_movimiento=TipoMovimientoEquipoEnum.ASIGNACION_INTERNA,
         origen="Origen List", destino="Destino List", proposito="Test",
         fecha_prevista_retorno=None, recibido_por=None, observaciones=None
     )
@@ -167,7 +168,7 @@ async def test_read_movimientos_filter_by_equipo(
 ):
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     movimiento_schema = MovimientoCreate(
-        equipo_id=equipo_para_movimiento.id, tipo_movimiento="Entrada",
+        equipo_id=equipo_para_movimiento.id, tipo_movimiento=TipoMovimientoEquipoEnum.ENTRADA,
         origen="Proveedor X", destino="Almacén IT", proposito="Compra",
         fecha_prevista_retorno=None, recibido_por=None, observaciones=None
     )
@@ -190,7 +191,7 @@ async def test_read_movimiento_by_id_success(
 ):
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     movimiento_schema = MovimientoCreate(
-        equipo_id=equipo_para_movimiento.id, tipo_movimiento="Asignacion Interna",
+        equipo_id=equipo_para_movimiento.id, tipo_movimiento=TipoMovimientoEquipoEnum.ASIGNACION_INTERNA,
         origen="Origen ID", destino="Destino ID", proposito="Test",
         fecha_prevista_retorno=None, recibido_por=None, observaciones=None
     )
@@ -219,7 +220,7 @@ async def test_update_movimiento_observaciones_success(
 ):
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     create_schema = MovimientoCreate(
-        equipo_id=equipo_para_movimiento.id, tipo_movimiento="Asignacion Interna",
+        equipo_id=equipo_para_movimiento.id, tipo_movimiento=TipoMovimientoEquipoEnum.ASIGNACION_INTERNA,
         origen="O", destino="D", observaciones="Obs Original", proposito="Test",
         fecha_prevista_retorno=None, recibido_por=None
     )
@@ -234,7 +235,6 @@ async def test_update_movimiento_observaciones_success(
     
     update_response = await client.put(f"{settings.API_V1_STR}/movimientos/{movimiento_id}", headers=headers, json=update_data)
     
-    # Con la corrección en la ruta, esta prueba ahora debe pasar.
     assert update_response.status_code == status.HTTP_200_OK, f"Detalle error: {update_response.text}"
     
     updated_mov = update_response.json()
@@ -248,7 +248,7 @@ async def test_cancel_movimiento_fail_on_completed(
     """Verifica que no se puede cancelar un movimiento ya completado."""
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     create_schema = MovimientoCreate(
-         equipo_id=equipo_para_movimiento.id, tipo_movimiento="Asignacion Interna",
+         equipo_id=equipo_para_movimiento.id, tipo_movimiento=TipoMovimientoEquipoEnum.ASIGNACION_INTERNA,
          origen="O", destino="D", proposito="Test para Cancelar (fallo)",
          fecha_prevista_retorno=None, recibido_por=None, observaciones=None
     )
@@ -273,17 +273,16 @@ async def test_cancel_movimiento_success_on_cancelable_state(
     """Verifica que un movimiento en estado cancelable puede ser cancelado."""
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     
-    # CORRECCIÓN: Proporcionar la fecha_prevista_retorno para cumplir el constraint de la DB.
     fecha_retorno = datetime.now(timezone.utc) + timedelta(days=5)
 
     mov_pendiente = Movimiento(
         equipo_id=equipo_para_movimiento.id,
-        tipo_movimiento="Salida Temporal",
+        tipo_movimiento=TipoMovimientoEquipoEnum.SALIDA_TEMPORAL.value,
         estado="Pendiente",
         origen="Almacén",
         destino="Externo",
         proposito="Prueba de cancelación exitosa",
-        fecha_prevista_retorno=fecha_retorno # Campo obligatorio añadido
+        fecha_prevista_retorno=fecha_retorno
     )
     db.add(mov_pendiente)
     db.commit()

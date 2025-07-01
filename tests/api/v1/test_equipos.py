@@ -13,14 +13,12 @@ from datetime import date
 
 pytestmark = pytest.mark.asyncio
 
-# --- Función auxiliar para generar series válidas ---
 def generate_valid_serie(prefix: str) -> str:
     part1 = prefix.upper()
     part2 = uuid4().hex[:4].upper()
     part3 = uuid4().hex[:4].upper()
     return f"{part1}-{part2}-{part3}"
 
-# --- Tests para Equipos ---
 
 async def test_create_equipo_success(
     client: AsyncClient, auth_token_supervisor: str, test_estado_disponible: EstadoEquipo
@@ -64,8 +62,6 @@ async def test_create_equipo_invalid_serie_format(
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY, f"Detalle error: {response.text}"
     assert "no es válido" in response.text
 
-
-# --- Tests para Componentes ---
 
 async def test_add_componente_success(
     client: AsyncClient, auth_token_supervisor: str,
@@ -116,12 +112,9 @@ async def test_add_componente_ciclico(
     assert "no puede ser componente de sí mismo" in response.json()["detail"].lower()
 
 
-# --- Otros Tests de Equipos (CRUD, permisos, etc.) ---
-
 async def test_create_equipo_no_permission(
     client: AsyncClient, auth_token_usuario_regular: str, test_estado_disponible: EstadoEquipo
 ):
-    # CORREGIDO: Se usa auth_token_usuario_regular
     headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     serie = generate_valid_serie("NOPERM")
     equipo_schema = EquipoCreate(
@@ -132,7 +125,11 @@ async def test_create_equipo_no_permission(
         valor_adquisicion=Decimal("0.00"),
         centro_costo="Test",
         marca="Test",
-        modelo="Test"
+        modelo="Test",
+        ubicacion_actual="Almacén",
+        fecha_puesta_marcha=None,
+        proveedor_id=None,
+        notas=None
     )
     data = jsonable_encoder(equipo_schema)
     response = await client.post(f"{settings.API_V1_STR}/equipos/", headers=headers, json=data)
@@ -153,7 +150,11 @@ async def test_create_equipo_duplicate_serie(
         valor_adquisicion=Decimal("1.00"),
         centro_costo="Test",
         marca="Test",
-        modelo="Test"
+        modelo="Test",
+        ubicacion_actual="Almacén",
+        fecha_puesta_marcha=None,
+        proveedor_id=None,
+        notas=None
     )
     response1 = await client.post(f"{settings.API_V1_STR}/equipos/", headers=headers, json=jsonable_encoder(equipo_schema1))
     assert response1.status_code == status.HTTP_201_CREATED, f"Error al crear primer equipo: {response1.text}"
@@ -166,7 +167,11 @@ async def test_create_equipo_duplicate_serie(
         valor_adquisicion=Decimal("1.00"),
         centro_costo="Test",
         marca="Test",
-        modelo="Test"
+        modelo="Test",
+        ubicacion_actual="Almacén",
+        fecha_puesta_marcha=None,
+        proveedor_id=None,
+        notas=None
     )
     response2 = await client.post(f"{settings.API_V1_STR}/equipos/", headers=headers, json=jsonable_encoder(equipo_schema2))
 
@@ -175,7 +180,6 @@ async def test_create_equipo_duplicate_serie(
 
 
 async def test_read_equipos(client: AsyncClient, auth_token_usuario_regular: str):
-    # CORREGIDO: Se usa auth_token_usuario_regular
     headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     response = await client.get(f"{settings.API_V1_STR}/equipos/", headers=headers)
     assert response.status_code == status.HTTP_200_OK, f"Detalle: {response.text}"
@@ -194,7 +198,11 @@ async def test_read_equipo_by_id(
         valor_adquisicion=Decimal("1.00"),
         centro_costo="Test",
         marca="Test",
-        modelo="Test"
+        modelo="Test",
+        ubicacion_actual="Almacén",
+        fecha_puesta_marcha=None,
+        proveedor_id=None,
+        notas=None
     )
     create_response = await client.post(f"{settings.API_V1_STR}/equipos/", headers=headers, json=jsonable_encoder(create_schema))
     assert create_response.status_code == status.HTTP_201_CREATED
@@ -221,7 +229,10 @@ async def test_update_equipo(
         valor_adquisicion=Decimal("1.00"),
         centro_costo="Test",
         marca="Test",
-        modelo="Test"
+        modelo="Test",
+        fecha_puesta_marcha=None,
+        proveedor_id=None,
+        notas=None
     )
     create_response = await client.post(f"{settings.API_V1_STR}/equipos/", headers=headers, json=jsonable_encoder(create_schema))
     assert create_response.status_code == status.HTTP_201_CREATED
@@ -248,7 +259,11 @@ async def test_delete_equipo(
         valor_adquisicion=Decimal("1.00"),
         centro_costo="Test",
         marca="Test",
-        modelo="Test"
+        modelo="Test",
+        ubicacion_actual="Almacén",
+        fecha_puesta_marcha=None,
+        proveedor_id=None,
+        notas=None
     )
     create_response = await client.post(f"{settings.API_V1_STR}/equipos/", headers=headers, json=jsonable_encoder(create_schema))
     assert create_response.status_code == status.HTTP_201_CREATED
@@ -260,4 +275,3 @@ async def test_delete_equipo(
 
     get_response = await client.get(f"{settings.API_V1_STR}/equipos/{equipo_id}", headers=headers)
     assert get_response.status_code == status.HTTP_404_NOT_FOUND
-

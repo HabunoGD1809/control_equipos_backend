@@ -11,7 +11,8 @@ from app.models.documentacion import Documentacion
 from app.models.equipo import Equipo
 from app.models.tipo_documento import TipoDocumento
 from app.models.usuario import Usuario
-# Importar sólo los schemas necesarios
+
+from app.schemas.enums import EstadoDocumentoEnum
 from app.schemas.documentacion import DocumentacionUpdate, DocumentacionVerify
 
 pytestmark = pytest.mark.asyncio
@@ -24,7 +25,6 @@ def mock_save_file():
         "mime_type": "application/pdf",
         "size": 12345,
     }
-    # Apuntamos el mock a la función correcta en el módulo donde se usa (routes)
     with mock.patch("app.api.routes.documentacion.save_upload_file", new_callable=mock.AsyncMock, return_value=file_info) as _mock:
         yield _mock
 
@@ -60,8 +60,6 @@ async def test_create_documentacion_success(
     created_doc = response.json()
     assert created_doc["titulo"] == metadata_dict["titulo"]
     mock_save_file.assert_called_once()
-
-# ===== INICIO DE LAS CORRECCIONES =====
 
 async def test_read_documentacion_success(
     client: AsyncClient, auth_token_usuario_regular: str, 
@@ -132,7 +130,7 @@ async def test_verify_documentacion_success(
     doc_id = test_documento_pendiente.id
     assert test_documento_pendiente.estado == "Pendiente"
 
-    verify_schema = DocumentacionVerify(estado="Verificado", notas_verificacion="Factura correcta.")
+    verify_schema = DocumentacionVerify(estado=EstadoDocumentoEnum.VERIFICADO, notas_verificacion="Factura correcta.")
     verify_data = jsonable_encoder(verify_schema)
     response = await client.post(f"{settings.API_V1_STR}/documentacion/{doc_id}/verificar", headers=headers, json=verify_data)
 
@@ -148,7 +146,7 @@ async def test_reject_documentacion_success(
     headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
     doc_id = test_documento_pendiente.id
 
-    verify_schema = DocumentacionVerify(estado="Rechazado", notas_verificacion="Documento ilegible.")
+    verify_schema = DocumentacionVerify(estado=EstadoDocumentoEnum.RECHAZADO, notas_verificacion="Documento ilegible.")
     verify_data = jsonable_encoder(verify_schema)
     response = await client.post(f"{settings.API_V1_STR}/documentacion/{doc_id}/verificar", headers=headers, json=verify_data)
 
@@ -197,7 +195,7 @@ async def test_delete_documentacion_file_not_found(
 
     assert delete_response.status_code == status.HTTP_200_OK
     assert "Archivo asociado no encontrado" in delete_response.json()["msg"]
-    mock_is_file.assert_called_once() # Se debe llamar para saber que no existe
+    mock_is_file.assert_called_once()
     mock_os_remove.assert_not_called()
 
     # Verificar que el registro DB sí se eliminó

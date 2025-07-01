@@ -7,6 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
+# --- CORRECCIÓN PARTE 1: Importar los modelos de SQLAlchemy aquí ---
+# Estos son los modelos correctos para usar con db.query()
+from app.models.inventario_stock import InventarioStock
+from app.models.inventario_movimiento import InventarioMovimiento
+from app.models.usuario import Usuario as UsuarioModel
+
 try:
     from psycopg import errors as psycopg_errors
     PG_RaiseException = psycopg_errors.RaiseException
@@ -16,16 +22,17 @@ except ImportError:
 
 
 from app.api import deps
+# --- CORRECCIÓN PARTE 2: Añadir alias a los schemas para evitar conflictos ---
 from app.schemas.tipo_item_inventario import (
     TipoItemInventario, TipoItemInventarioCreate, TipoItemInventarioUpdate, TipoItemInventarioConStock
 )
-from app.schemas.inventario_stock import InventarioStock, InventarioStockUpdate, InventarioStockTotal
-from app.schemas.inventario_movimiento import InventarioMovimiento, InventarioMovimientoCreate
+# Se añade "as InventarioStockSchema" y "as InventarioMovimientoSchema"
+from app.schemas.inventario_stock import InventarioStock as InventarioStockSchema, InventarioStockUpdate, InventarioStockTotal
+from app.schemas.inventario_movimiento import InventarioMovimiento as InventarioMovimientoSchema, InventarioMovimientoCreate
 from app.schemas.common import Msg
 from app.services.tipo_item_inventario import tipo_item_inventario_service
 from app.services.inventario_stock import inventario_stock_service
 from app.services.inventario_movimiento import inventario_movimiento_service
-from app.models.usuario import Usuario as UsuarioModel
 from app.schemas.enums import TipoMovimientoInvEnum
 
 PERM_ADMIN_TIPOS_INV = "administrar_inventario_tipos"
@@ -168,18 +175,24 @@ def delete_tipo_item_inventario(
     logger.warning(f"Usuario '{current_user.nombre_usuario}' intentando eliminar tipo de item ID: {tipo_id}")
     tipo_a_eliminar = tipo_item_inventario_service.get_or_404(db, id=tipo_id)
     nombre_tipo_log = tipo_a_eliminar.nombre
+    
+    # --- CORRECCIÓN PARTE 3: Usar el modelo de SQLAlchemy en la consulta ---
+    # `InventarioStock` y `InventarioMovimiento` ahora se refieren a los modelos importados al inicio.
+    stock_existente = db.query(InventarioStock).filter(InventarioStock.tipo_item_id == tipo_id).first()
+    if stock_existente:
+        logger.warning(f"Intento de eliminar tipo de item '{nombre_tipo_log}' que tiene stock asociado.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede eliminar el tipo '{nombre_tipo_log}' porque tiene stock o movimientos asociados.")
+    
+    movimientos_existentes = db.query(InventarioMovimiento).filter(InventarioMovimiento.tipo_item_id == tipo_id).first()
+    if movimientos_existentes:
+        logger.warning(f"Intento de eliminar tipo de item '{nombre_tipo_log}' que tiene movimientos asociados.")
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede eliminar el tipo '{nombre_tipo_log}' porque tiene stock o movimientos asociados.")
+
     try:
         tipo_item_inventario_service.remove(db=db, id=tipo_id)
         db.commit()
         logger.info(f"Tipo de item '{nombre_tipo_log}' (ID: {tipo_id}) eliminado exitosamente.")
         return {"msg": f"Tipo de item '{nombre_tipo_log}' eliminado."}
-    except IntegrityError as e:
-        db.rollback()
-        error_detail = str(getattr(e, 'orig', e))
-        logger.error(f"Error de integridad al eliminar tipo item '{nombre_tipo_log}' (ID: {tipo_id}): {error_detail}", exc_info=True)
-        if "violates foreign key constraint" in error_detail.lower():
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede eliminar el tipo '{nombre_tipo_log}' porque tiene stock o movimientos asociados.")
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No se puede eliminar el tipo de item debido a referencias existentes.")
     except Exception as e:
         db.rollback()
         logger.error(f"Error inesperado eliminando tipo item '{nombre_tipo_log}' (ID: {tipo_id}): {e}", exc_info=True)
@@ -189,7 +202,7 @@ def delete_tipo_item_inventario(
 # Endpoints para STOCK DE INVENTARIO
 # ==============================================================================
 @router.get("/stock/",
-            response_model=List[InventarioStock],
+            response_model=List[InventarioStockSchema],
             dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV]))],
             summary="Consultar Stock de Inventario",
             )
@@ -231,7 +244,7 @@ def read_total_stock_for_item(
 
 
 @router.put("/stock/{stock_id}/details",
-            response_model=InventarioStock,
+            response_model=InventarioStockSchema,
             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_STOCK_INV]))],
             summary="Actualizar Detalles Menores de un Registro de Stock",
             )
@@ -270,7 +283,7 @@ def update_inventario_stock_details(
 # Endpoints para MOVIMIENTOS DE INVENTARIO
 # ==============================================================================
 @router.post("/movimientos/",
-             response_model=InventarioMovimiento,
+             response_model=InventarioMovimientoSchema,
              status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_STOCK_INV]))],
              summary="Registrar un Movimiento de Inventario",
@@ -331,7 +344,7 @@ def create_inventario_movimiento(
 
 
 @router.get("/movimientos/",
-            response_model=List[InventarioMovimiento],
+            response_model=List[InventarioMovimientoSchema],
             dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV]))],
             summary="Listar Movimientos de Inventario",
             )
@@ -368,7 +381,7 @@ def read_inventario_movimientos(
 
 
 @router.get("/movimientos/{movimiento_id}",
-            response_model=InventarioMovimiento,
+            response_model=InventarioMovimientoSchema,
             dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV]))],
             summary="Obtener Movimiento de Inventario por ID",
             )

@@ -2,24 +2,24 @@ import logging
 from typing import Any, List
 from uuid import UUID as PyUUID
 
-from fastapi import APIRouter, Depends, HTTPException, status # Query no se usa aquí
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError # Importar IntegrityError directamente
+from sqlalchemy.exc import IntegrityError
 
 from app.api import deps
 from app.schemas.rol import Rol, RolCreate, RolUpdate
 from app.schemas.permiso import Permiso as PermisoSchema
 from app.schemas.common import Msg
-from app.services.rol import rol_service # Servicio ya modificado
-from app.services.permiso import permiso_service # Servicio ya modificado
-from app.models.usuario import Usuario as UsuarioModel # Para dependencia de usuario actual
+from app.services.rol import rol_service
+from app.services.permiso import permiso_service
+from app.models.usuario import Usuario as UsuarioModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Permisos (ajustar según los nombres exactos en la BD)
 PERM_ADMIN_ROLES = "administrar_roles"
-PERM_ADMIN_USUARIOS = "administrar_usuarios" # Para permitir ver roles si administras usuarios
+PERM_ADMIN_USUARIOS = "administrar_usuarios"
 
 # ==============================================================================
 # Endpoints para ROLES
@@ -46,7 +46,7 @@ def create_rol(
         # El servicio .create() ya no hace commit y maneja validaciones previas de unicidad.
         rol = rol_service.create(db=db, obj_in=rol_in)
         db.commit()
-        db.refresh(rol) # Importante para cargar la relación de permisos correctamente
+        db.refresh(rol)
         logger.info(f"Rol '{rol.nombre}' (ID: {rol.id}) creado exitosamente por {current_user.nombre_usuario}.")
         return rol
     except HTTPException as http_exc:
@@ -58,7 +58,7 @@ def create_rol(
         db.rollback()
         error_detail = str(getattr(e, 'orig', e))
         logger.error(f"Error de integridad al crear rol '{rol_in.nombre}': {error_detail}", exc_info=True)
-        if "roles_nombre_key" in error_detail or "uq_roles_nombre" in error_detail: # Ajustar al nombre de constraint real
+        if "roles_nombre_key" in error_detail or "uq_roles_nombre" in error_detail:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Conflicto: Ya existe un rol con el nombre '{rol_in.nombre}'.")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al crear el rol.")
     except Exception as e:
@@ -124,17 +124,12 @@ def update_rol(
     Requiere el permiso: `administrar_roles`.
     """
     logger.info(f"Intento de actualización de rol ID {rol_id} por usuario {current_user.nombre_usuario} con datos: {rol_in.model_dump(exclude_unset=True)}")
-    rol_db = rol_service.get_or_404(db, id=rol_id) # Lanza 404 si no existe
-    
-    # Evitar modificar roles críticos como 'admin' (ejemplo de lógica adicional)
-    # if rol_db.nombre == settings.ADMIN_ROLE_NAME and rol_in.nombre and rol_in.nombre != settings.ADMIN_ROLE_NAME:
-    #     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No se puede cambiar el nombre del rol administrador.")
+    rol_db = rol_service.get_or_404(db, id=rol_id)
 
     try:
-        # El servicio .update() ya no hace commit y maneja validaciones y asignación de permisos.
         updated_rol = rol_service.update(db=db, db_obj=rol_db, obj_in=rol_in)
         db.commit()
-        db.refresh(updated_rol) # Para asegurar que la relación de permisos esté cargada/actualizada.
+        db.refresh(updated_rol)
         logger.info(f"Rol '{updated_rol.nombre}' (ID: {rol_id}) actualizado exitosamente por {current_user.nombre_usuario}.")
         return updated_rol
     except HTTPException as http_exc:
@@ -144,7 +139,7 @@ def update_rol(
         db.rollback()
         error_detail = str(getattr(e, 'orig', e))
         logger.error(f"Error de integridad al actualizar rol ID {rol_id}: {error_detail}", exc_info=True)
-        if "roles_nombre_key" in error_detail or "uq_roles_nombre" in error_detail: # Ajustar al nombre de constraint real
+        if "roles_nombre_key" in error_detail or "uq_roles_nombre" in error_detail:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Conflicto: Ya existe un rol con el nombre proporcionado.")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al actualizar el rol.")
     except Exception as e:
@@ -192,18 +187,17 @@ def delete_rol(
         db.commit()
         logger.info(f"Rol '{rol_nombre_para_log}' (ID: {rol_id}) eliminado exitosamente por {current_user.nombre_usuario}.")
         return {"msg": f"Rol '{rol_nombre_para_log}' eliminado correctamente."}
-    except HTTPException as http_exc: # Captura 404 o 409 (por usuarios asignados) del servicio
-        # No es necesario db.rollback() si el error es una validación previa o 404 del servicio.
+    except HTTPException as http_exc:
         logger.warning(f"Error HTTP al eliminar rol ID {rol_id}: {http_exc.detail}")
         raise http_exc
-    except IntegrityError as e: # Fallback si alguna otra FK lo impide
+    except IntegrityError as e: 
         db.rollback()
         error_detail = str(getattr(e, 'orig', e))
         logger.error(f"Error de integridad al eliminar rol ID {rol_id}: {error_detail}", exc_info=True)
         if "violates foreign key constraint" in error_detail.lower():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"No se puede eliminar el rol '{rol_nombre_para_log}' porque está referenciado de alguna forma (además de usuarios)."
+                detail=f"No se puede eliminar el rol '{rol_nombre_para_log}' porque está asignado a uno o más usuarios."
             )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al eliminar el rol.")
     except Exception as e:
@@ -216,15 +210,14 @@ def delete_rol(
 # ==============================================================================
 
 @router.get("/permisos/",
-            response_model=List[PermisoSchema], # Usar PermisoSchema para evitar conflicto
+            response_model=List[PermisoSchema],
             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_ROLES]))],
             summary="Listar Permisos",
             response_description="Una lista de todos los permisos disponibles en el sistema.")
 def read_permisos(
     db: Session = Depends(deps.get_db),
     skip: int = 0,
-    limit: int = 200, # Aumentado el límite por defecto
-    # current_user: UsuarioModel = Depends(deps.get_current_active_user),
+    limit: int = 200,
 ) -> Any:
     """
     Obtiene la lista de todos los permisos definidos en el sistema.

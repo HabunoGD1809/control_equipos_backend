@@ -14,6 +14,8 @@ from app.models.asignacion_licencia import AsignacionLicencia
 from app.models.equipo import Equipo
 from app.models.usuario import Usuario
 from app.models.proveedor import Proveedor
+
+from app.schemas.enums import TipoLicenciaSoftwareEnum, MetricaLicenciamientoEnum
 from app.schemas.software_catalogo import SoftwareCatalogoCreate, SoftwareCatalogoUpdate
 from app.schemas.licencia_software import LicenciaSoftwareCreate, LicenciaSoftwareUpdate
 from app.schemas.asignacion_licencia import AsignacionLicenciaCreate
@@ -64,7 +66,7 @@ async def licencia_office_disponible(db: Session, software_office: SoftwareCatal
             proveedor_id=test_proveedor.id
         )
         db.add(lic)
-    db.commit() # Commit para asegurar que la fixture esté en la DB
+    db.commit()
     db.refresh(lic)
     return lic
 
@@ -90,7 +92,6 @@ async def equipo_sin_licencia(db: Session, test_estado_disponible) -> Equipo:
 async def test_create_licencia_success(client: AsyncClient, auth_token_admin: str, software_win: SoftwareCatalogo, test_proveedor: Proveedor):
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
     
-    # CORRECCIÓN: Se añade el campo 'cantidad_disponible' explícitamente.
     lic_schema = LicenciaSoftwareCreate(
         software_catalogo_id=software_win.id,
         clave_producto=f"WINKEY-{uuid4().hex[:8]}",
@@ -99,7 +100,7 @@ async def test_create_licencia_success(client: AsyncClient, auth_token_admin: st
         proveedor_id=test_proveedor.id,
         numero_orden_compra="OC-123",
         cantidad_total=1,
-        cantidad_disponible=1,  # Corregido
+        cantidad_disponible=1,
         costo_adquisicion=Decimal("120.00"),
         notas="Licencia de Windows para test",
     )
@@ -119,7 +120,8 @@ async def test_create_software_catalogo_success(client: AsyncClient, auth_token_
     sw_name = f"Software Test {uuid4().hex[:6]}"
     sw_schema = SoftwareCatalogoCreate(
         nombre=sw_name, version="1.0", fabricante="Test Factory", categoria="Test",
-        tipo_licencia="Suscripción Anual", metrica_licenciamiento="Por Usuario Nominal",
+        tipo_licencia=TipoLicenciaSoftwareEnum.SUSCRIPCION_ANUAL,
+        metrica_licenciamiento=MetricaLicenciamientoEnum.POR_USUARIO_NOMINAL,
         descripcion="Software de prueba"
     )
     data = jsonable_encoder(sw_schema)

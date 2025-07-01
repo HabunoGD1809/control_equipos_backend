@@ -4,8 +4,7 @@ from uuid import UUID
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
-from sqlalchemy import select, text, exc as sqlalchemy_exc, and_, or_, func as sql_func
-from sqlalchemy.dialects.postgresql import TSTZRANGE
+from sqlalchemy import select, func, text, exc as sqlalchemy_exc
 from fastapi import HTTPException, status
 
 EXCLUSION_VIOLATION_PGCODE = "23P01"
@@ -38,7 +37,15 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         logger.debug(f"Usuario '{current_user.nombre_usuario}' intentando crear reserva para Equipo ID: {obj_in.equipo_id} de {obj_in.fecha_hora_inicio} a {obj_in.fecha_hora_fin}")
 
         equipo = equipo_service.get_or_404(db, id=obj_in.equipo_id)
-
+        
+        # Validar que el equipo esté en un estado reservable (ej: "Disponible")
+        if equipo.estado.nombre != "Disponible":
+            logger.warning(f"Intento de reservar equipo '{equipo.nombre}' (ID: {equipo.id}) que no está disponible. Estado actual: '{equipo.estado.nombre}'.")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"El equipo '{equipo.nombre}' no está disponible para ser reservado (estado actual: '{equipo.estado.nombre}')."
+            )
+            
         if obj_in.fecha_hora_fin <= obj_in.fecha_hora_inicio:
             logger.warning("Intento de crear reserva con fecha de fin anterior o igual a la de inicio.")
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La fecha de fin de la reserva debe ser posterior a la fecha de inicio.")
@@ -62,7 +69,7 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
             if pgcode == EXCLUSION_VIOLATION_PGCODE or (original_exc and "reservas_equipo_equipo_id_periodo_reserva_excl" in str(original_exc).lower()):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Conflicto de reserva: El equipo '{equipo.nombre}' ya está reservado o no disponible en el horario solicitado.",
+                    detail=f"Conflicto de reserva: El equipo '{equipo.nombre}' ya está reservado en el horario solicitado.",
                 ) from e
             else:
                 logger.error(f"Error de integridad no esperado al crear reserva: {original_exc or str(e)}", exc_info=True)
@@ -117,7 +124,7 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
                 equipo_nombre = db_obj.equipo.nombre if db_obj.equipo else f"ID {db_obj.equipo_id}"
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Conflicto de reserva: El equipo '{equipo_nombre}' ya está reservado o no disponible en el nuevo horario solicitado.",
+                    detail=f"Conflicto de reserva: El equipo '{equipo_nombre}' ya está reservado en el nuevo horario solicitado.",
                 ) from e
             else:
                 logger.error(f"Error de integridad no esperado al actualizar reserva ID {reserva_id}: {original_exc or str(e)}", exc_info=True)
@@ -225,9 +232,9 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         """Busca reservas para un equipo que solapan con un rango de tiempo dado."""
         logger.debug(f"Buscando reservas para Equipo ID {equipo_id} entre {start_time} y {end_time}")
         
-        existing_reservation_range = sql_func.tstzrange(self.model.fecha_hora_inicio, self.model.fecha_hora_fin, '()')
+        existing_reservation_range = func.tstzrange(self.model.fecha_hora_inicio, self.model.fecha_hora_fin, '()')
         
-        new_reservation_range = sql_func.tstzrange(start_time, end_time, '()')
+        new_reservation_range = func.tstzrange(start_time, end_time, '()')
 
         statement = select(self.model).where(
             self.model.equipo_id == equipo_id,

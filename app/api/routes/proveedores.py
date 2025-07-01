@@ -11,6 +11,7 @@ from app.schemas.proveedor import Proveedor, ProveedorCreate, ProveedorUpdate
 from app.schemas.common import Msg
 from app.services.proveedor import proveedor_service
 from app.models.usuario import Usuario as UsuarioModel
+from app.models.equipo import Equipo
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -140,7 +141,7 @@ def update_proveedor(
 
 @router.delete("/{proveedor_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_GESTIONAR_PROVEEDORES]))], # Usar el permiso actualizado
+               dependencies=[Depends(deps.PermissionChecker([PERM_GESTIONAR_PROVEEDORES]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar un Proveedor",
                response_description="Mensaje de confirmación.")
@@ -151,7 +152,7 @@ def delete_proveedor(
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
     """
-    Elimina un proveedor.
+    Elimina un proveedor. No se permite si está asociado a algún equipo.
     Requiere el permiso: `administrar_catalogos`.
     """
     logger.warning(f"Intento de eliminación de proveedor ID: {proveedor_id} por usuario {current_user.nombre_usuario}")
@@ -159,23 +160,21 @@ def delete_proveedor(
     proveedor_db = proveedor_service.get_or_404(db, id=proveedor_id)
     proveedor_nombre_para_log = proveedor_db.nombre
 
+    # CORRECCIÓN: Añadir validación manual de integridad
+    equipos_asociados = db.query(Equipo).filter(Equipo.proveedor_id == proveedor_id).first()
+    if equipos_asociados:
+        logger.warning(f"Intento de eliminar proveedor '{proveedor_nombre_para_log}' que está asociado al equipo ID {equipos_asociados.id}.")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"No se puede eliminar el proveedor '{proveedor_nombre_para_log}' porque está asociado a uno o más equipos."
+        )
+
+    # Si pasa la validación, proceder con la eliminación
     try:
         proveedor_service.remove(db=db, id=proveedor_id)
         db.commit()
         logger.info(f"Proveedor '{proveedor_nombre_para_log}' (ID: {proveedor_id}) eliminado exitosamente por {current_user.nombre_usuario}.")
         return {"msg": f"Proveedor '{proveedor_nombre_para_log}' eliminado correctamente."}
-    except IntegrityError as e:
-        db.rollback()
-        error_detail = str(getattr(e, 'orig', e))
-        logger.warning(f"No se pudo eliminar el proveedor '{proveedor_nombre_para_log}' (ID: {proveedor_id}) debido a una restricción de integridad: {error_detail}", exc_info=False)
-        if "violates foreign key constraint" in error_detail.lower():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"No se puede eliminar el proveedor '{proveedor_nombre_para_log}' porque está referenciado por otros registros (ej. equipos, licencias)."
-            )
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al eliminar el proveedor.")
-    except HTTPException as http_exc:
-        raise http_exc
     except Exception as e:
         db.rollback()
         logger.error(f"Error inesperado eliminando proveedor '{proveedor_nombre_para_log}' (ID: {proveedor_id}): {e}", exc_info=True)

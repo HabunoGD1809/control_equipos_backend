@@ -167,37 +167,23 @@ def delete_estado_equipo(
     estado_id: PyUUID,
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
-    """
-    Elimina un estado de equipo.
-    No se permite si el estado está asignado a algún equipo (la BD lo previene con FK Restrict).
-    Requiere el permiso: `administrar_catalogos`.
-    """
     logger.warning(f"Intento de eliminación estado equipo ID: {estado_id} por usuario {current_user.nombre_usuario}")
     
-    estado_nombre_para_log = "desconocido"
+    db_estado = estado_equipo_service.get_or_404(db, id=estado_id)
+    estado_nombre_para_log = db_estado.nombre
+    
     try:
-        db_estado = estado_equipo_service.get_or_404(db, id=estado_id)
-        estado_nombre_para_log = db_estado.nombre
-        
         estado_equipo_service.remove(db=db, id=estado_id)
         db.commit()
         logger.info(f"Estado de equipo '{estado_nombre_para_log}' (ID: {estado_id}) eliminado por {current_user.nombre_usuario}.")
         return {"msg": f"Estado de equipo '{estado_nombre_para_log}' eliminado correctamente."}
-    except IntegrityError as e:
+    except IntegrityError:
         db.rollback()
-        logger.warning(f"Intento de eliminar estado equipo '{estado_nombre_para_log}' (ID: {estado_id}) en uso: {e.orig}", exc_info=False)
-        if "violates foreign key constraint" in str(e.orig).lower():
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=f"No se puede eliminar el estado '{estado_nombre_para_log}' porque está asignado a uno o más equipos."
-            )
-        logger.error(f"Error de integridad no esperado al eliminar estado equipo '{estado_nombre_para_log}' (ID: {estado_id}): {e.orig}", exc_info=True)
+        logger.warning(f"Intento de eliminar estado equipo '{estado_nombre_para_log}' (ID: {estado_id}) que está en uso.")
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error de base de datos al eliminar el estado '{estado_nombre_para_log}'.",
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"El estado de equipo '{estado_nombre_para_log}' está en uso y no puede ser eliminado."
         )
-    except HTTPException:
-        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Error inesperado eliminando estado equipo '{estado_nombre_para_log}' (ID: {estado_id}): {e}", exc_info=True)

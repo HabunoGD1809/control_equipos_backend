@@ -655,33 +655,49 @@ def tipo_item_toner(db: Session) -> TipoItemInventario:
         logger.info(f"Creado TipoItemInventario '{nombre_item}' con ID {item.id} y SKU {item.sku}")
     return item
 
+# tests/conftest.py
+
 @pytest.fixture(scope="function")
 async def stock_inicial_toner(db: Session, tipo_item_toner: TipoItemInventario) -> InventarioStock:
+    """
+    Asegura que haya un registro de stock inicial predecible para un item
+    en una ubicación y lote ('N/A') específicos.
+    Es idempotente: crea el registro si no existe, o lo actualiza si ya existe.
+    """
     logger.debug("Inicio fixture: stock_inicial_toner")
     ubicacion_test = "Almacén Principal Toner Fixture"
+    lote_defecto = "N/A" # Usar el valor por defecto que definimos en la DB
     cantidad_inicial = 10
     costo_inicial = Decimal("25.50")
     
+    # --- CORRECCIÓN CLAVE ---
+    # Buscamos el registro usando el lote por defecto, no None.
     stock_record = db.query(InventarioStock).filter(
-        InventarioStock.tipo_item_id == tipo_item_toner.id, # type: ignore
-        InventarioStock.ubicacion == ubicacion_test, # type: ignore
-        InventarioStock.lote.is_(None) # type: ignore
+        InventarioStock.tipo_item_id == tipo_item_toner.id,
+        InventarioStock.ubicacion == ubicacion_test,
+        InventarioStock.lote == lote_defecto 
     ).first()
 
     if stock_record:
+        # Si ya existe, nos aseguramos de que tenga los valores correctos para la prueba
         stock_record.cantidad_actual = cantidad_inicial
         stock_record.costo_promedio_ponderado = costo_inicial
         stock_record.ultima_actualizacion = datetime.now(timezone.utc)
-        db.add(stock_record)
     else:
+        # Si no existe, lo creamos con el lote correcto
         stock_record = InventarioStock(
-            tipo_item_id=tipo_item_toner.id, ubicacion=ubicacion_test, lote=None, # type: ignore
-            cantidad_actual=cantidad_inicial, costo_promedio_ponderado=costo_inicial,
+            tipo_item_id=tipo_item_toner.id,
+            ubicacion=ubicacion_test,
+            lote=lote_defecto,  # <-- Se establece el lote a 'N/A'
+            cantidad_actual=cantidad_inicial,
+            costo_promedio_ponderado=costo_inicial,
             ultima_actualizacion=datetime.now(timezone.utc)
         )
-        db.add(stock_record)
-    db.flush(); db.refresh(stock_record)
-    logger.info(f"Fixture stock_inicial_toner: Stock ID {stock_record.id} con cantidad {stock_record.cantidad_actual}.")
+    
+    db.add(stock_record)
+    db.flush()
+    db.refresh(stock_record)
+    logger.info(f"Fixture stock_inicial_toner: Stock ID {stock_record.id} con cantidad {stock_record.cantidad_actual} en lote '{stock_record.lote}'.")
     return stock_record
 
 @pytest.fixture(scope="function")

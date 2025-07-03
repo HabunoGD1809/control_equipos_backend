@@ -65,7 +65,7 @@ def stock_inicial_toner(db: Session, tipo_item_toner: TipoItemInventario) -> Inv
     elif stock.cantidad_actual < cantidad_necesaria:
         stock.cantidad_actual = cantidad_necesaria
     
-    db.commit()
+    db.flush() 
     db.refresh(stock)
     return stock
 
@@ -164,7 +164,10 @@ async def test_create_inventario_movimiento_stock_insuficiente(
         "tipo_movimiento": TipoMovimientoInvEnum.SALIDA_USO.value, 
         "cantidad": cantidad_salida,
         "ubicacion_origen": ubicacion_stock,
+        "lote_origen": stock_inicial_toner.lote,
     }
+    
+    # Esta validación de Pydantic es opcional pero buena práctica
     try:
         InventarioMovimientoCreate(**mov_data)
     except ValidationError as e:
@@ -220,3 +223,75 @@ async def test_read_inventario_movimientos_success(
     assert "usuario_registrador" in mov_encontrado
     assert mov_encontrado["usuario_registrador"] is not None
     assert "id" in mov_encontrado["usuario_registrador"]
+
+# ==============================================================
+# INICIO: NUEVA PRUEBA DE LÓGICA DE NEGOCIO
+# ==============================================================
+
+@pytest.mark.asyncio
+async def test_calculo_costo_promedio_ponderado(
+    client: AsyncClient,
+    auth_token_admin: str,
+    db: Session
+):
+    """
+    Verifica que el trigger calcula correctamente el costo promedio ponderado
+    después de múltiples entradas con diferentes costos para un nuevo item.
+    """
+    headers = {"Authorization": f"Bearer {auth_token_admin}"}
+    
+    # 1. Crear un tipo de item único para esta prueba
+    nombre_item_test = f"Item CPP {uuid4().hex[:6]}"
+    sku_test = f"CPP-{uuid4().hex[:8]}"
+    tipo_item = TipoItemInventario(nombre=nombre_item_test, sku=sku_test, categoria="Consumible", unidad_medida="Unidad", stock_minimo=1)
+    db.add(tipo_item)
+    db.commit()
+    db.refresh(tipo_item)
+    
+    ubicacion_test = f"Almacen-CPP-{uuid4().hex[:4]}"
+    lote_test = "LOTE-CPP-001"
+
+    # 2. Transacción 1: Entrada inicial
+    cantidad_1 = 10
+    costo_1 = Decimal("20.00")
+    mov_data_1 = {
+        "tipo_item_id": str(tipo_item.id),
+        "tipo_movimiento": TipoMovimientoInvEnum.ENTRADA_COMPRA.value,
+        "cantidad": cantidad_1,
+        "ubicacion_destino": ubicacion_test,
+        "lote_destino": lote_test,
+        "costo_unitario": float(costo_1)
+    }
+    response_1 = await client.post(f"{settings.API_V1_STR}/inventario/movimientos/", headers=headers, json=mov_data_1)
+    assert response_1.status_code == status.HTTP_201_CREATED
+
+    # Verificar estado después de la primera entrada
+    stock_db = db.query(InventarioStock).filter_by(tipo_item_id=tipo_item.id, ubicacion=ubicacion_test, lote=lote_test).one()
+    assert stock_db.cantidad_actual == cantidad_1
+    assert stock_db.costo_promedio_ponderado == costo_1, "El CPP inicial debe ser igual al primer costo."
+
+    # 3. Transacción 2: Segunda entrada a un costo mayor
+    cantidad_2 = 5
+    costo_2 = Decimal("30.00")
+    mov_data_2 = {
+        "tipo_item_id": str(tipo_item.id),
+        "tipo_movimiento": TipoMovimientoInvEnum.ENTRADA_COMPRA.value,
+        "cantidad": cantidad_2,
+        "ubicacion_destino": ubicacion_test,
+        "lote_destino": lote_test,
+        "costo_unitario": float(costo_2)
+    }
+    response_2 = await client.post(f"{settings.API_V1_STR}/inventario/movimientos/", headers=headers, json=mov_data_2)
+    assert response_2.status_code == status.HTTP_201_CREATED
+
+    # 4. Verificación del cálculo
+    cpp_esperado = ((cantidad_1 * costo_1) + (cantidad_2 * costo_2)) / (cantidad_1 + cantidad_2)
+    
+    db.refresh(stock_db)
+    assert stock_db.cantidad_actual == cantidad_1 + cantidad_2
+    
+    # Añadimos una aserción para asegurar que el costo no es None antes de la operación.
+    assert stock_db.costo_promedio_ponderado is not None, "El costo promedio ponderado no debería ser nulo."
+    
+    # Comparamos con una tolerancia para evitar problemas de punto flotante
+    assert abs(stock_db.costo_promedio_ponderado - cpp_esperado) < Decimal("0.0001"), "El cálculo del Costo Promedio Ponderado es incorrecto."

@@ -828,3 +828,64 @@ async def reserva_pendiente(db: Session, test_usuario_regular_fixture: Usuario, 
     db.add(reserva); db.flush(); db.refresh(reserva)
     logger.info(f"Creada reserva_pendiente ID {reserva.id} para equipo {reserva.equipo_id}")
     return reserva
+
+@pytest.fixture
+def test_proveedor_para_borrar(db: Session) -> Proveedor:
+    """Crea un proveedor único y no utilizado, seguro para ser borrado."""
+    nombre_unico = f"Proveedor Borrable {uuid4().hex[:8]}"
+    rnc_unico = f"RNC-DEL-{uuid4().hex[:8].upper()}"
+    prov = Proveedor(nombre=nombre_unico, rnc=rnc_unico)
+    db.add(prov)
+    db.flush()
+    db.refresh(prov)
+    return prov
+
+@pytest.fixture
+def test_equipo_para_borrar(db: Session, test_estado_disponible: EstadoEquipo) -> Equipo:
+    """Crea un equipo único y no utilizado, con un formato de serie válido."""
+    serie_unica = f"DEL-{uuid4().hex[:4].upper()}-{uuid4().hex[:4].upper()}"
+    equipo = Equipo(
+        nombre=f"Equipo Borrable {serie_unica}",
+        numero_serie=serie_unica,
+        estado_id=test_estado_disponible.id
+    )
+    db.add(equipo)
+    db.flush()
+    db.refresh(equipo)
+    return equipo
+
+@pytest.fixture
+def test_tipo_doc_para_borrar(db: Session) -> TipoDocumento:
+    """Crea un tipo de documento único y no utilizado, seguro para ser borrado."""
+    tipo_doc = TipoDocumento(
+        nombre=f"Tipo Doc Borrable {uuid4().hex[:8]}"
+    )
+    db.add(tipo_doc)
+    db.flush()
+    db.refresh(tipo_doc)
+    return tipo_doc
+
+@pytest.fixture
+def test_rol_para_borrar(db: Session) -> Rol:
+    """Crea un rol simple y sin usuarios, seguro para ser borrado."""
+    rol = Rol(nombre=f"Rol Borrable {uuid4().hex[:8]}")
+    db.add(rol)
+    db.flush()
+    db.refresh(rol)
+    return rol
+
+@pytest.fixture
+def test_reserva_para_cancelar(db: Session, test_equipo_reservable: Equipo, test_usuario_regular_fixture: Usuario) -> ReservaEquipo:
+    """Crea una reserva básica que puede ser cancelada."""
+    from datetime import datetime, timedelta, timezone
+    reserva = ReservaEquipo(
+        equipo_id=test_equipo_reservable.id,
+        usuario_solicitante_id=test_usuario_regular_fixture.id,
+        fecha_hora_inicio=datetime.now(timezone.utc) + timedelta(days=50),
+        fecha_hora_fin=datetime.now(timezone.utc) + timedelta(days=50, hours=1),
+        proposito="Reserva para test de cancelación"
+    )
+    db.add(reserva)
+    db.flush()
+    db.refresh(reserva)
+    return reserva

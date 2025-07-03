@@ -26,8 +26,6 @@ ALLOWED_MIME_TYPES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # .xlsx
     "text/plain",
 }
-# Tamaño máximo permitido (ej: 10MB)
-MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 async def save_upload_file(upload_file: UploadFile) -> dict:
     """
@@ -45,10 +43,10 @@ async def save_upload_file(upload_file: UploadFile) -> dict:
         # Por ahora, lo rechazaremos por simplicidad y seguridad.
         raise HTTPException(status_code=status.HTTP_411_LENGTH_REQUIRED, detail="No se pudo determinar el tamaño del archivo. Header 'Content-Length' requerido.")
 
-    if size > MAX_FILE_SIZE_BYTES:
+    if size > settings.MAX_FILE_SIZE_BYTES:
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"El archivo excede el tamaño máximo permitido ({MAX_FILE_SIZE_BYTES / 1024 / 1024:.1f} MB).",
+            detail=f"El archivo excede el tamaño máximo permitido ({settings.MAX_FILE_SIZE_BYTES / 1024 / 1024:.1f} MB).",
         )
 
     # 2. Validación de Tipo MIME

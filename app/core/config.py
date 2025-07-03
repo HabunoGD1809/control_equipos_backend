@@ -74,7 +74,8 @@ class Settings(BaseSettings):
 
     # --- Configuración de Almacenamiento ---
     UPLOADS_DIRECTORY: str = os.getenv("UPLOADS_DIRECTORY", "./uploads")
-
+    MAX_FILE_SIZE_BYTES: int = int(os.getenv("MAX_FILE_SIZE_BYTES", 10 * 1024 * 1024)) # 10 MB
+    
     # --- Otras Configuraciones ---
     MAX_FAILED_ATTEMPTS_BEFORE_LOCK: int = int(os.getenv("MAX_FAILED_ATTEMPTS_BEFORE_LOCK", "5"))
 

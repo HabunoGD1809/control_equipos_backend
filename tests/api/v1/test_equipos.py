@@ -9,7 +9,7 @@ from app.models.equipo import Equipo
 from app.models.estado_equipo import EstadoEquipo
 from app.schemas.equipo import EquipoCreate
 from fastapi import status
-from datetime import date
+from datetime import date, timedelta
 
 pytestmark = pytest.mark.asyncio
 
@@ -89,6 +89,26 @@ async def test_add_componente_success(
     assert relacion_creada["equipo_padre_id"] == str(equipo_padre_id)
     assert relacion_creada["equipo_componente_id"] == str(componente_a_anadir_id)
     assert relacion_creada["tipo_relacion"] == "componente"
+
+async def test_create_equipo_fechas_invalidas_falla(
+    client: AsyncClient, auth_token_supervisor: str, test_estado_disponible: EstadoEquipo
+):
+    """Prueba que la DB constraint 'check_fechas_logicas' funcione."""
+    headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
+    numero_serie_valido = generate_valid_serie("FECHA") # Usa tu helper
+
+    equipo_data = {
+        "nombre": "Equipo Fechas Inválidas",
+        "numero_serie": numero_serie_valido,
+        "estado_id": str(test_estado_disponible.id),
+        "fecha_adquisicion": date.today().isoformat(),
+        "fecha_puesta_marcha": (date.today() - timedelta(days=1)).isoformat() # Fecha inválida
+    }
+    response = await client.post(f"{settings.API_V1_STR}/equipos/", headers=headers, json=equipo_data)
+
+    # La DB lanzará un CheckViolation, que el error_handler debería convertir a 400 o similar
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "violates check constraint" in response.json()["detail"].lower()
 
 async def test_add_componente_ciclico(
     client: AsyncClient, auth_token_supervisor: str,

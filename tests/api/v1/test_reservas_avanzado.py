@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from app.core.config import settings
 from app.models.equipo import Equipo
+from app.models.reserva_equipo import ReservaEquipo
 from app.models.estado_equipo import EstadoEquipo
 from sqlalchemy.orm import Session
 
@@ -85,3 +86,19 @@ async def test_reservar_equipo_en_mantenimiento_falla(
     assert response.status_code in [status.HTTP_400_BAD_REQUEST, status.HTTP_409_CONFLICT], response.text
     error_detail = response.json().get("detail", "").lower()
     assert "no está disponible para ser reservado" in error_detail
+
+async def test_checkin_reserva_no_confirmada_falla(
+    client: AsyncClient, auth_token_supervisor: str, reserva_pendiente: ReservaEquipo
+):
+    """Prueba que no se puede hacer check-in si la reserva no está confirmada."""
+    headers = {"Authorization": f"Bearer {auth_token_supervisor}"}
+    checkin_data = {"check_in_time": datetime.now(timezone.utc).isoformat()}
+
+    response = await client.patch(
+        f"{settings.API_V1_STR}/reservas/{reserva_pendiente.id}/check-in-out",
+        headers=headers,
+        json=checkin_data
+    )
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert "solo se puede hacer check-in de reservas en estado 'confirmada'" in response.json()["detail"].lower()

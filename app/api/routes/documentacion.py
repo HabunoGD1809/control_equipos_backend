@@ -5,7 +5,7 @@ from typing import Any, List, Optional
 from uuid import UUID as PyUUID
 import shutil
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Form
+from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Form, Request 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -41,6 +41,7 @@ PERM_ELIMINAR_DOCUMENTOS = "eliminar_documentos"
              response_description="El registro de documentación creado.")
 async def create_documentacion_with_upload(
     *,
+    request: Request,
     db: Session = Depends(deps.get_db),
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
     titulo: str = Form(...),
@@ -52,7 +53,20 @@ async def create_documentacion_with_upload(
     file: UploadFile = File(..., description="Archivo a subir"),
 ) -> Any:
     logger.info(f"Usuario '{current_user.nombre_usuario}' subiendo documento '{file.filename}' con título '{titulo}'.")
-
+    
+    # 1. Validar tamaño usando el header Content-Length ANTES de procesar
+    content_length = request.headers.get('content-length')
+    if content_length is None:
+        raise HTTPException(
+            status_code=status.HTTP_411_LENGTH_REQUIRED,
+            detail="Header 'Content-Length' es requerido."
+        )
+    if int(content_length) > settings.MAX_FILE_SIZE_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"El payload de la petición es demasiado grande. El límite es {settings.MAX_FILE_SIZE_BYTES // 1024 // 1024} MB."
+        )
+    
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El archivo debe tener un nombre.")
 

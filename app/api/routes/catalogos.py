@@ -456,25 +456,30 @@ def delete_tipo_mantenimiento(
 ) -> Any:
     """Elimina un tipo de mantenimiento (si no está en uso)."""
     logger.warning(f"Intento de eliminación tipo mantenimiento ID: {tipo_id} por usuario {current_user.nombre_usuario}")
-    tipo_nombre_para_log = "desconocido"
+
+    # 1. Busca el objeto que se va a eliminar
+    db_tipo = tipo_mantenimiento_service.get_or_404(db, id=tipo_id)
+    tipo_nombre_para_log = db_tipo.nombre
+
+    # 2. Comprobación explícita de la regla de negocio
+    #    SQLAlchemy cargará la relación 'mantenimientos' si se accede a ella.
+    #    Si la lista no está vacía, significa que está en uso.
+    if db_tipo.mantenimientos:
+        logger.warning(f"Intento de eliminar tipo de mantenimiento en uso: '{tipo_nombre_para_log}'")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"El tipo de mantenimiento '{tipo_nombre_para_log}' está en uso y no puede ser eliminado.",
+        )
+
+    # 3. Si la comprobación pasa, proceder con la eliminación
     try:
-        db_tipo = tipo_mantenimiento_service.get_or_404(db, id=tipo_id)
-        tipo_nombre_para_log = db_tipo.nombre
-        
         tipo_mantenimiento_service.remove(db=db, id=tipo_id)
         db.commit()
         logger.info(f"Tipo de mantenimiento '{tipo_nombre_para_log}' (ID: {tipo_id}) eliminado por {current_user.nombre_usuario}.")
         return {"msg": f"Tipo de mantenimiento '{tipo_nombre_para_log}' eliminado correctamente."}
-    except IntegrityError as e:
-        db.rollback()
-        logger.warning(f"Intento de eliminar tipo mantenimiento '{tipo_nombre_para_log}' (ID: {tipo_id}) en uso: {e.orig}", exc_info=False)
-        if "violates foreign key constraint" in str(e.orig).lower():
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede eliminar el tipo de mantenimiento '{tipo_nombre_para_log}' porque está en uso.")
-        logger.error(f"Error de integridad no esperado al eliminar tipo mantenimiento '{tipo_nombre_para_log}' (ID: {tipo_id}): {e.orig}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al eliminar el tipo de mantenimiento.")
-    except HTTPException:
-        raise
     except Exception as e:
+        # Este bloque ahora solo debería capturar errores inesperados,
+        # ya que la lógica de negocio se validó antes.
         db.rollback()
         logger.error(f"Error inesperado eliminando tipo mantenimiento '{tipo_nombre_para_log}' (ID: {tipo_id}): {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor.")

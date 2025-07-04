@@ -1,5 +1,5 @@
 import logging
-from datetime import timedelta
+from datetime import timedelta, datetime
 from typing import Any, Optional
 from uuid import UUID as PyUUID
 
@@ -68,7 +68,6 @@ def log_login_attempt_task(
                 logger.error(f"Error al cerrar sesión de DB en tarea de fondo: {e_close}", exc_info=True)
 
 
-# --- Endpoints ---
 @router.post("/login/access-token", response_model=Token)
 def login_access_token(
     request: Request, # Para obtener IP y User-Agent
@@ -81,93 +80,86 @@ def login_access_token(
     Recibe username y password en form data.
     Devuelve un Access Token JWT.
     Registra el intento de login en segundo plano.
+    Actualiza los datos del usuario (último login, intentos fallidos).
     """
     ip_address = request.client.host if request.client else "N/A"
     user_agent = request.headers.get("user-agent", "N/A")
-    username_attempt = form_data.username # Para logs y autenticación
+    username_attempt = form_data.username
 
     logger.info(f"Intento de login para usuario '{username_attempt}' desde IP {ip_address}")
 
-    user = usuario_service.authenticate( # Este método no modifica la BD
+    user = usuario_service.authenticate(
         db, username=username_attempt, password=form_data.password
     )
 
-    identified_user_id: Optional[PyUUID] = user.id if user else None
-    login_success = False
-    fail_reason_log: Optional[str] = None
-
+    # --- Caso 1: Usuario no encontrado o contraseña incorrecta ---
     if not user:
-        logger.warning(f"Login fallido (credenciales/usuario no encontrado) para '{username_attempt}' desde IP {ip_address}.")
-        fail_reason_log = "Credenciales incorrectas o usuario no encontrado"
-        # NO hacer db.commit() o db.rollback() aquí para la sesión principal.
-        # La tarea de fondo manejará su propia transacción para el log.
+        # El servicio ya actualizó los intentos fallidos si el usuario existe.
+        # Ahora solo registramos en el log de auditoría.
+        logger.warning(f"Login fallido (credenciales/usuario no encontrado) para '{username_attempt}'.")
         background_tasks.add_task(
             log_login_attempt_task,
             username_attempt=username_attempt,
             success=False,
             ip_address=ip_address,
             user_agent=user_agent,
-            fail_reason=fail_reason_log,
-            user_id=None # No se pudo identificar al usuario
+            fail_reason="Credenciales incorrectas o usuario no encontrado",
+            user_id=None
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nombre de usuario o contraseña incorrectos.", # Mensaje genérico por seguridad
+            detail="Nombre de usuario o contraseña incorrectos.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    # --- Caso 2: Usuario encontrado pero inactivo/bloqueado ---
     if not usuario_service.is_active(user):
-        logger.warning(f"Login fallido (usuario inactivo/bloqueado) para '{username_attempt}' (ID: {user.id}) desde IP {ip_address}.")
-        fail_reason_log = "Usuario inactivo o bloqueado"
-        login_success = False # Aunque se identificó, el login no es exitoso en términos de acceso
+        logger.warning(f"Login fallido (usuario inactivo/bloqueado) para '{username_attempt}'.")
         background_tasks.add_task(
             log_login_attempt_task,
             username_attempt=username_attempt,
-            success=False, # Login no exitoso
+            success=False,
             ip_address=ip_address,
             user_agent=user_agent,
-            fail_reason=fail_reason_log,
-            user_id=identified_user_id
+            fail_reason="Usuario inactivo o bloqueado",
+            user_id=user.id
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Usuario inactivo o bloqueado.")
 
-    # --- Autenticación exitosa y usuario activo ---
-    login_success = True
-    logger.info(f"Login exitoso para usuario '{username_attempt}' (ID: {user.id}) desde IP {ip_address}.")
+    # --- Caso 3: Autenticación exitosa y usuario activo ---
+    logger.info(f"Login exitoso para usuario '{username_attempt}'.")
 
+    # Llamamos al servicio para actualizar 'ultimo_login' y resetear intentos
+    try:
+        usuario_service.handle_successful_login(db, user=user)
+        db.commit() # Guardamos los cambios del login exitoso
+        db.refresh(user) # Refrescamos el objeto para tener los datos actualizados
+    except Exception as e:
+        logger.error(f"Error al guardar datos de login exitoso para {user.nombre_usuario}: {e}")
+        db.rollback()
+        # No fallamos el login, pero es importante registrar el error.
+
+    # Crear token
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
         subject=str(user.id), expires_delta=access_token_expires
     )
 
-    # Registrar intento exitoso en segundo plano
+    # Registrar intento exitoso en el log de auditoría
     background_tasks.add_task(
         log_login_attempt_task,
         username_attempt=username_attempt,
         success=True,
         ip_address=ip_address,
         user_agent=user_agent,
-        fail_reason=None, # Sin motivo de fallo
-        user_id=identified_user_id
+        fail_reason=None,
+        user_id=user.id
     )
     
-    # Opcional: Actualizar último login del usuario.
-    # Si se hace aquí, necesitaría commit.
-    # if hasattr(usuario_service, 'update_last_login_timestamp'):
-    #     try:
-    #         usuario_service.update_last_login_timestamp(db, user=user)
-    #         db.commit() # Commit para esta actualización específica del usuario
-    #         db.refresh(user) # Refrescar el objeto usuario
-    #         logger.info(f"Actualizado último login para usuario '{user.nombre_usuario}'.")
-    #     except Exception as e_ull:
-    #         db.rollback() # Rollback si la actualización del último login falla
-    #         logger.error(f"Error al actualizar último login para usuario '{user.nombre_usuario}': {e_ull}", exc_info=True)
-    #         # No fallar el login por esto, pero loguearlo.
-
     return {"access_token": access_token, "token_type": "bearer"}
 
 
-@router.post("/login/test-token", response_model=UsuarioSchema) # Usar schema renombrado
+@router.post("/login/test-token", response_model=UsuarioSchema)
 def test_token(current_user: UsuarioModel = Depends(deps.get_current_active_user)) -> Any:
     """
     Endpoint para probar si un access token es válido.

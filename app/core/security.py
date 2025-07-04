@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Union, Optional
+from typing import Any, Union, Optional, List, Set
 
 from jose import jwt, JWTError
 from pydantic import ValidationError # Para errores de validación de payload
@@ -9,6 +9,8 @@ from app.core.config import settings
 # Importar schema del payload (si se quiere validar al decodificar aquí también)
 from app.schemas.token import TokenPayload
 import logging
+
+from app.models.usuario import Usuario
 
 # Obtener logger
 logger = logging.getLogger(__name__)
@@ -59,3 +61,19 @@ def decode_access_token(token: str) -> Optional[TokenPayload]:
         # KeyError si falta 'sub' u otro campo requerido en TokenPayload
         logger.error(f"Error decodificando token en security.py: {e}", exc_info=True)
         return None
+
+
+def user_has_permissions(user: Usuario, required_permissions: Union[List[str], Set[str]]) -> bool:
+    """
+    Función helper que verifica si un usuario tiene AL MENOS UNO de los permisos requeridos.
+    Esta función no es una dependencia de FastAPI, sino una utilidad para ser llamada desde las rutas.
+    """
+    if not user or not user.rol or not hasattr(user.rol, 'permisos'):
+        logger.warning(f"user_has_permissions: Usuario '{user.nombre_usuario if user else 'Desconocido'}' no tiene rol o permisos cargados para la verificación.")
+        return False
+    
+    user_permissions = {p.nombre for p in user.rol.permisos}
+    required_set = set(required_permissions)
+    
+    # Comprueba si hay alguna intersección entre los permisos del usuario y los requeridos
+    return not required_set.isdisjoint(user_permissions)

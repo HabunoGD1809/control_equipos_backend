@@ -8,7 +8,10 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import text
 import logging
 
+from app import models
 from app.core.config import settings
+from app.core import permissions as perms
+from app.core.security import user_has_permissions
 from app.db.session import SessionLocal
 
 from app.models.usuario import Usuario
@@ -19,10 +22,6 @@ from app.services.usuario import usuario_service
 
 logger = logging.getLogger(__name__)
 
-# --- Constantes para Roles ---
-ADMIN_ROLE_NAME = "admin"
-SUPERVISOR_ROLE_NAME = "supervisor"
-USER_ROLE_NAME = "usuario_regular" 
 
 # --- Dependencia para la Sesión de Base de Datos ---
 def get_db() -> Generator[Session, None, None]:
@@ -89,24 +88,6 @@ def get_current_active_user(
     return current_user
 
 
-# ===== INICIO DE LA FUNCIÓN AÑADIDA =====
-def user_has_permissions(user: Usuario, required_permissions: Union[List[str], Set[str]]) -> bool:
-    """
-    Función helper que verifica si un usuario tiene AL MENOS UNO de los permisos requeridos.
-    Esta función no es una dependencia de FastAPI, sino una utilidad para ser llamada desde las rutas.
-    """
-    if not user or not user.rol or not hasattr(user.rol, 'permisos'):
-        logger.warning(f"user_has_permissions: Usuario '{user.nombre_usuario if user else 'Desconocido'}' no tiene rol o permisos cargados para la verificación.")
-        return False
-    
-    user_permissions = {p.nombre for p in user.rol.permisos}
-    required_set = set(required_permissions)
-    
-    # Comprueba si hay alguna intersección entre los permisos del usuario y los requeridos
-    return not required_set.isdisjoint(user_permissions)
-# ===== FIN DE LA FUNCIÓN AÑADIDA =====
-
-
 class PermissionChecker:
     """
     Clase para usar como dependencia de FastAPI para verificar permisos.
@@ -150,16 +131,27 @@ class PermissionChecker:
         
         logger.debug(f"PermissionChecker: Acceso concedido a '{current_user.nombre_usuario}'.")
 
-# --- Funciones de conveniencia para roles (si se prefiere sobre permisos) ---
-def require_admin(current_user: Usuario = Depends(get_current_active_user)):
-    """Dependencia que requiere que el usuario activo tenga el rol 'admin'."""
-    if not current_user.rol or current_user.rol.nombre != ADMIN_ROLE_NAME:
-        logger.warning(f"Acceso denegado (Admin requerido) para {current_user.nombre_usuario} (Rol: {current_user.rol.nombre if current_user.rol else 'N/A'}).")
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Se requiere rol de administrador.")
+def require_admin(current_user: models.Usuario = Depends(get_current_active_user)) -> models.Usuario:
+    """
+    Dependencia que verifica si el usuario actual tiene el permiso de 
+    administración general del sistema.
+    """
+    if not user_has_permissions(current_user, {perms.PERM_ADMIN_SISTEMA}):
+        logger.warning(
+            f"Acceso denegado: Usuario '{current_user.nombre_usuario}' "
+            f"intentó acceder a un recurso de administrador sin el permiso '{perms.PERM_ADMIN_SISTEMA}'."
+        )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene los permisos de administrador necesarios para esta acción.",
+        )
+    
+    # Si tiene el permiso, devuelve el objeto del usuario.
+    return current_user
 
 def require_supervisor(current_user: Usuario = Depends(get_current_active_user)):
     """Dependencia que requiere que el usuario activo tenga rol 'supervisor' o 'admin'."""
-    roles_permitidos = {ADMIN_ROLE_NAME, SUPERVISOR_ROLE_NAME}
+    roles_permitidos = {perms.ADMIN_ROLE_NAME, perms.SUPERVISOR_ROLE_NAME}
     if not current_user.rol or current_user.rol.nombre not in roles_permitidos:
         logger.warning(f"Acceso denegado (Supervisor/Admin requerido) para {current_user.nombre_usuario} (Rol: {current_user.rol.nombre if current_user.rol else 'N/A'}).")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Se requiere rol de supervisor o administrador.")

@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from . import auth, usuarios, roles_permisos, proveedores, catalogos, equipos
 from . import movimientos, mantenimiento, documentacion, inventario, licencias
 from . import reservas, notificaciones, dashboard, auditoria, backup_log
+from . import password
 
 # Crear el router principal de la API
 api_router = APIRouter()
@@ -24,6 +25,7 @@ api_router.include_router(reservas.router, prefix="/reservas", tags=["Reservas"]
 api_router.include_router(notificaciones.router, prefix="/notificaciones", tags=["Notificaciones"])
 api_router.include_router(dashboard.router, prefix="/dashboard", tags=["Dashboard"])
 api_router.include_router(auditoria.router, prefix="/auditoria", tags=["Auditoría"])
-api_router.include_router(backup_log.router, prefix="/backups/logs", tags=["Backups y Logs"]) # Etiqueta más descriptiva
+api_router.include_router(backup_log.router, prefix="/backups/logs", tags=["Backups y Logs"])
+api_router.include_router(password.router, prefix="/pass", tags=["Password Management"])
 
 # Nota: Los prefijos y etiquetas ayudan a organizar la documentación de la API.

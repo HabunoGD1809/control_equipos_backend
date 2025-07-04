@@ -25,11 +25,8 @@ async def test_login_usuario_bloqueado_falla(
     }
     response = await client.post(f"{settings.API_V1_STR}/auth/login/access-token", data=login_data)
 
-    # 3. Verificar que la API responde con 401 Unauthorized
-    # CORRECCIÓN: Se espera 401 en lugar de 400.
-    assert response.status_code == status.HTTP_401_UNAUTHORIZED
-    # CORRECCIÓN: Se verifica el mensaje de error genérico por seguridad.
-    assert "incorrectos" in response.json()["detail"].lower()
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+    assert "inactivo o bloqueado" in response.json()["detail"].lower()
 
 async def test_admin_no_puede_cambiar_su_propio_rol(
     client: AsyncClient, auth_token_admin: str, test_admin_fixture: Usuario, test_rol_usuario_regular: Rol
@@ -45,7 +42,6 @@ async def test_admin_no_puede_cambiar_su_propio_rol(
     )
 
     assert response.status_code == status.HTTP_403_FORBIDDEN
-    # El mensaje de error ahora es más específico gracias a tu lógica en usuarios.py
     assert "no puede cambiar su propio rol" in response.json()["detail"].lower()
 
 async def test_admin_no_puede_eliminarse_a_si_mismo(client: AsyncClient, auth_token_admin: str, test_admin_fixture: Usuario):

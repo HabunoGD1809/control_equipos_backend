@@ -1,12 +1,14 @@
 import logging
 from typing import Any, Dict, Optional, Union
-from uuid import UUID
+from uuid import UUID, uuid4
+from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from fastapi import HTTPException, status
 
 # Importar modelos y schemas
+from app.core.permissions import ADMIN_ROLE_NAME
 from app.models.usuario import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
 
@@ -132,37 +134,142 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
     ) -> Optional[Usuario]:
         """
         Autentica a un usuario. Verifica nombre de usuario y contraseña.
+        [MODIFICADO] Ahora maneja los intentos fallidos.
         """
         user = self.get_by_username(db, username=username)
         if not user:
             logger.warning(f"Intento de login fallido: Usuario '{username}' no encontrado.")
             return None
+        
+        # Aunque el usuario ya esté bloqueado, lo devolvemos para que el endpoint
+        # maneje el mensaje de error específico.
         if user.bloqueado:
-            logger.warning(f"Intento de login fallido: Usuario '{username}' está bloqueado.")
-            return None
+            logger.warning(f"Intento de login para usuario '{username}' que ya está bloqueado.")
+            # No retornamos None aquí, para que el endpoint pueda diferenciar
+            # entre 'bloqueado' y 'credenciales incorrectas'.
+            # El método is_active se encargará de esto.
+            return user
+
         if not verify_password(password, user.hashed_password):
             logger.warning(f"Intento de login fallido: Contraseña incorrecta para usuario '{username}'.")
-            return None
+            # --- Lógica para intento fallido ---
+            user.intentos_fallidos = (user.intentos_fallidos or 0) + 1
+            if user.intentos_fallidos >= 5: # Límite de intentos
+                user.bloqueado = True
+                logger.warning(f"Usuario '{username}' bloqueado por exceder 5 intentos fallidos.")
+            
+            try:
+                db.add(user)
+                db.commit() # Guardamos el intento fallido
+            except Exception as e:
+                logger.error(f"Error al actualizar intentos fallidos para {username}: {e}")
+                db.rollback()
+            return None # La autenticación falló
         
-        logger.info(f"Usuario '{username}' autenticado exitosamente.")
+        # Si la contraseña es correcta pero estaba bloqueado, no debería pasar, pero como salvaguarda
+        if user.bloqueado:
+             return user # Dejar que el endpoint lo maneje con is_active
+
+        logger.info(f"Usuario '{username}' autenticado preliminarmente (contraseña correcta).")
         return user
 
     def is_active(self, user: Usuario) -> bool:
         """Verifica si un usuario está activo (no bloqueado)."""
         return not user.bloqueado
-
+    
+    # def is_admin(self, user: Usuario) -> bool:
+    #     """
+    #     Verifica si un usuario tiene el rol de 'admin'.
+    #     Es una comprobación de conveniencia.
+    #     """
+        
+    #     if user and user.rol:
+    #         return user.rol.nombre == ADMIN_ROLE_NAME
+    #     return False
+    
     def needs_password_change(self, user: Usuario) -> bool:
         """Verifica si el usuario necesita cambiar su contraseña."""
         return user.requiere_cambio_contrasena
     
+    def handle_successful_login(self, db: Session, *, user: Usuario) -> None:
+        """
+        Actualiza los campos del usuario tras un login exitoso.
+        Resetea intentos fallidos y actualiza la fecha de último login.
+        NO realiza db.commit().
+        """
+        logger.debug(f"Preparando actualización de campos de login para usuario: {user.nombre_usuario}")
+        user.ultimo_login = datetime.now(timezone.utc)
+        user.intentos_fallidos = 0
+        db.add(user) # Añade el objeto a la sesión para marcarlo como 'dirty'
+        logger.info(f"Campos de login exitoso preparados para {user.nombre_usuario}.")
+
+
     def remove(self, db: Session, *, id: Union[UUID, int]) -> Usuario:
         """
         Elimina un usuario. 
         NO realiza db.commit().
         """
         logger.debug(f"Intentando eliminar usuario ID: {id}")
-        deleted_obj = super().remove(db, id=id)
-        logger.warning(f"Usuario '{deleted_obj.nombre_usuario}' (ID: {id}) preparado para ser eliminado.")
-        return deleted_obj
+        db_obj = self.get(db, id=id)
+        if not db_obj:
+             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+        
+        nombre_usuario_eliminado = db_obj.nombre_usuario
+        
+        db.delete(db_obj)
+        logger.warning(f"Usuario '{nombre_usuario_eliminado}' (ID: {id}) preparado para ser eliminado.")
+        # La convención es no devolver el objeto, ya que se eliminará.
+        # Pero si se necesita para logs, se puede devolver.
+        return db_obj
+
+    # --- Método para iniciar el reseteo de contraseña ---
+    def initiate_password_reset(self, db: Session, *, username: str) -> Usuario:
+        """
+        Genera y guarda un token de reseteo temporal para un usuario.
+        NO realiza db.commit().
+        """
+        user = self.get_by_username(db, username=username)
+        if not user:
+            logger.error(f"Intento de reseteo de contraseña para usuario no existente: {username}")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
+        
+        user.token_temporal = uuid4()
+        user.token_expiracion = datetime.now(timezone.utc) + timedelta(minutes=15) # Token válido por 15 minutos
+        
+        db.add(user)
+        logger.info(f"Token de reseteo de contraseña generado para el usuario '{username}'.")
+        return user
+
+    # --- Método para confirmar el reseteo de contraseña ---
+    def confirm_password_reset(
+        self, db: Session, *, username: str, token: UUID, new_password: str
+    ) -> Usuario:
+        """
+        Verifica el token y actualiza la contraseña del usuario.
+        NO realiza db.commit().
+        """
+        user = self.get_by_username(db, username=username)
+
+        # Validaciones de seguridad
+        if not user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
+        
+        if not user.token_temporal or user.token_temporal != token:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token de reseteo inválido.")
+            
+        if not user.token_expiracion or user.token_expiracion < datetime.now(timezone.utc):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El token de reseteo ha expirado.")
+
+        # Si todo es correcto, actualizamos la contraseña y limpiamos los tokens
+        user.hashed_password = get_password_hash(new_password)
+        user.token_temporal = None
+        user.token_expiracion = None
+        user.requiere_cambio_contrasena = False # El usuario acaba de establecer su contraseña
+        user.bloqueado = False # Desbloquear al usuario si estaba bloqueado
+        user.intentos_fallidos = 0
+
+        db.add(user)
+        logger.info(f"Contraseña reseteada exitosamente para el usuario '{username}'.")
+        return user
 
 usuario_service = UsuarioService(Usuario)

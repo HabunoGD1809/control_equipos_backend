@@ -76,7 +76,7 @@ async def test_password_recovery_flow(
     # 1. Admin solicita un token de reseteo para el usuario
     request_data = {"username": user_to_reset.nombre_usuario}
     response_request = await client.post(
-        f"{settings.API_V1_STR}/pass/password-recovery/request-reset",
+        f"{settings.API_V1_STR}/auth/password-recovery/request-reset",
         headers=admin_headers,
         json=request_data
     )
@@ -90,7 +90,7 @@ async def test_password_recovery_flow(
     new_password = "MyNewSecurePassword123!"
     reset_data = {"token": reset_token, "new_password": new_password, "username": user_to_reset.nombre_usuario}
     response_reset = await client.post(
-        f"{settings.API_V1_STR}/pass/password-recovery/confirm-reset", 
+        f"{settings.API_V1_STR}/auth/password-recovery/confirm-reset", 
         json=reset_data
     )
     assert response_reset.status_code == 200, response_reset.text
@@ -108,7 +108,7 @@ async def test_password_recovery_flow(
 
     # 5. Verificamos que el token de reseteo ya no es válido
     response_reset_again = await client.post(
-        f"{settings.API_V1_STR}/pass/password-recovery/confirm-reset", 
+        f"{settings.API_V1_STR}/auth/password-recovery/confirm-reset", 
         json=reset_data
     )
     assert response_reset_again.status_code == 400
@@ -124,7 +124,7 @@ async def test_request_password_recovery_for_nonexistent_user(client: AsyncClien
     non_existent_username = "usuario_que_no_existe_jamás"
     request_data = {"username": non_existent_username}
     response = await client.post(
-        f"{settings.API_V1_STR}/pass/password-recovery/request-reset",
+        f"{settings.API_V1_STR}/auth/password-recovery/request-reset",
         headers=headers, 
         json=request_data
     )
@@ -151,7 +151,7 @@ async def test_reset_password_with_invalid_token(
     }
     
     response = await client.post(
-        f"{settings.API_V1_STR}/pass/password-recovery/confirm-reset",
+        f"{settings.API_V1_STR}/auth/password-recovery/confirm-reset",
         json=reset_data
     )
     

@@ -1,22 +1,26 @@
 import logging
-from datetime import timedelta, datetime
+from datetime import timedelta
 from typing import Any, Optional
 from uuid import UUID as PyUUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError # Para capturar errores de BD en la tarea
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api import deps
-from app.schemas.token import Token
-from app.schemas.usuario import Usuario as UsuarioSchema
-from app.services.usuario import usuario_service
-from app.services.login_log import login_log_service # Servicio ya modificado
 from app.core import security
 from app.core.config import settings
+from app.db.session import SessionLocal
 from app.models.usuario import Usuario as UsuarioModel
-from app.db.session import SessionLocal # Para la tarea de fondo
+from app.schemas.common import Msg
+from app.schemas.token import Token
+from app.schemas.usuario import Usuario as UsuarioSchema
+from app.schemas.password import (
+    PasswordResetRequest, PasswordResetResponse, PasswordResetConfirm
+)
+from app.services.usuario import usuario_service
+from app.services.login_log import login_log_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -24,7 +28,7 @@ logger = logging.getLogger(__name__)
 # --- Función para Tarea de Fondo (Manejo Seguro de Sesión DB) ---
 def log_login_attempt_task(
     username_attempt: Optional[str],
-    success: bool, # Cambiado a bool, ya que el servicio espera bool
+    success: bool,
     ip_address: Optional[str],
     user_agent: Optional[str],
     fail_reason: Optional[str] = None,
@@ -34,10 +38,10 @@ def log_login_attempt_task(
     Tarea de fondo para registrar un intento de login.
     Crea y cierra su propia sesión de base de datos.
     """
-    db: Optional[Session] = None # Inicializar db a None
+    db: Optional[Session] = None
     try:
-        db = SessionLocal() # Crear nueva sesión para la tarea de fondo
-        login_log_service.log_attempt( # Este método ya no hace commit
+        db = SessionLocal()
+        login_log_service.log_attempt(
             db=db,
             username_attempt=username_attempt,
             success=success,
@@ -46,41 +50,28 @@ def log_login_attempt_task(
             fail_reason=fail_reason,
             user_id=user_id
         )
-        db.commit() # Commit aquí para la tarea de fondo
+        db.commit()
         logger.info(f"Intento de login (UsuarioIntento: '{username_attempt}', Exito: {success}) registrado en background.")
-    except SQLAlchemyError as e_sql: # Capturar errores de BD específicamente
+    except SQLAlchemyError as e_sql:
         logger.error(f"ERROR de SQLAlchemy en tarea de fondo log_login_attempt_task: {e_sql}", exc_info=True)
-        if db: # Solo hacer rollback si la sesión db fue creada
-            try:
-                db.rollback()
-                logger.info("Rollback realizado en tarea de fondo debido a SQLAlchemyError.")
-            except Exception as e_rb:
-                logger.error(f"Error durante el rollback en tarea de fondo: {e_rb}", exc_info=True)
+        if db:
+            db.rollback()
     except Exception as e_gen:
         logger.error(f"ERROR general en tarea de fondo log_login_attempt_task: {e_gen}", exc_info=True)
-        # No hay rollback aquí si la sesión no es de SQLAlchemy o ya se manejó arriba.
     finally:
-        if db: # Solo cerrar si la sesión db fue creada
-            try:
-                db.close()
-                logger.debug("Sesión de DB cerrada en tarea de fondo log_login_attempt_task.")
-            except Exception as e_close:
-                logger.error(f"Error al cerrar sesión de DB en tarea de fondo: {e_close}", exc_info=True)
+        if db:
+            db.close()
 
-
+# --- Rutas de Login ---
 @router.post("/login/access-token", response_model=Token)
 def login_access_token(
-    request: Request, # Para obtener IP y User-Agent
-    background_tasks: BackgroundTasks, # Para registrar el log en segundo plano
-    db: Session = Depends(deps.get_db), # Sesión principal para autenticación
-    form_data: OAuth2PasswordRequestForm = Depends() # Datos del formulario de login
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(deps.get_db),
+    form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
     """
     Endpoint de login estándar OAuth2.
-    Recibe username y password en form data.
-    Devuelve un Access Token JWT.
-    Registra el intento de login en segundo plano.
-    Actualiza los datos del usuario (último login, intentos fallidos).
     """
     ip_address = request.client.host if request.client else "N/A"
     user_agent = request.headers.get("user-agent", "N/A")
@@ -92,10 +83,7 @@ def login_access_token(
         db, username=username_attempt, password=form_data.password
     )
 
-    # --- Caso 1: Usuario no encontrado o contraseña incorrecta ---
     if not user:
-        # El servicio ya actualizó los intentos fallidos si el usuario existe.
-        # Ahora solo registramos en el log de auditoría.
         logger.warning(f"Login fallido (credenciales/usuario no encontrado) para '{username_attempt}'.")
         background_tasks.add_task(
             log_login_attempt_task,
@@ -112,7 +100,6 @@ def login_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # --- Caso 2: Usuario encontrado pero inactivo/bloqueado ---
     if not usuario_service.is_active(user):
         logger.warning(f"Login fallido (usuario inactivo/bloqueado) para '{username_attempt}'.")
         background_tasks.add_task(
@@ -126,26 +113,21 @@ def login_access_token(
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Usuario inactivo o bloqueado.")
 
-    # --- Caso 3: Autenticación exitosa y usuario activo ---
     logger.info(f"Login exitoso para usuario '{username_attempt}'.")
 
-    # Llamamos al servicio para actualizar 'ultimo_login' y resetear intentos
     try:
         usuario_service.handle_successful_login(db, user=user)
-        db.commit() # Guardamos los cambios del login exitoso
-        db.refresh(user) # Refrescamos el objeto para tener los datos actualizados
+        db.commit()
+        db.refresh(user)
     except Exception as e:
         logger.error(f"Error al guardar datos de login exitoso para {user.nombre_usuario}: {e}")
         db.rollback()
-        # No fallamos el login, pero es importante registrar el error.
 
-    # Crear token
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = security.create_access_token(
         subject=str(user.id), expires_delta=access_token_expires
     )
 
-    # Registrar intento exitoso en el log de auditoría
     background_tasks.add_task(
         log_login_attempt_task,
         username_attempt=username_attempt,
@@ -163,7 +145,98 @@ def login_access_token(
 def test_token(current_user: UsuarioModel = Depends(deps.get_current_active_user)) -> Any:
     """
     Endpoint para probar si un access token es válido.
-    Devuelve la información del usuario si el token es válido y el usuario está activo.
     """
     logger.debug(f"Token válido para usuario: {current_user.nombre_usuario} (ID: {current_user.id})")
     return current_user
+
+# --- Rutas de Reseteo de Contraseña ---
+
+@router.post(
+    "/password-recovery/request-reset",
+    response_model=PasswordResetResponse,
+    status_code=status.HTTP_200_OK,
+    summary="[Admin] Inicia el reseteo de contraseña para un usuario"
+)
+def request_password_reset(
+    request_data: PasswordResetRequest,
+    db: Session = Depends(deps.get_db),
+    current_user: UsuarioModel = Depends(deps.require_admin),
+):
+    """
+    **Endpoint solo para administradores.**
+
+    Inicia el proceso de reseteo de contraseña para un usuario específico.
+    """
+    logger.info(
+        f"Admin '{current_user.nombre_usuario}' está solicitando reseteo de "
+        f"contraseña para usuario '{request_data.username}'."
+    )
+    try:
+        user = usuario_service.initiate_password_reset(db, username=request_data.username)
+        db.commit()
+        db.refresh(user)
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            f"Error al iniciar el reseteo de contraseña para '{request_data.username}'. "
+            f"Admin: '{current_user.nombre_usuario}'. Error: {e}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ocurrió un error al procesar la solicitud."
+        )
+    
+    if not user.token_temporal or not user.token_expiracion:
+        raise HTTPException(status_code=500, detail="Error al generar el token.")
+
+    return PasswordResetResponse(
+        username=user.nombre_usuario,
+        reset_token=user.token_temporal,
+        expires_at=user.token_expiracion.isoformat()
+    )
+
+
+@router.post(
+    "/password-recovery/confirm-reset",
+    response_model=Msg,
+    status_code=status.HTTP_200_OK,
+    summary="Confirma y establece una nueva contraseña"
+)
+def confirm_password_reset(
+    reset_data: PasswordResetConfirm,
+    db: Session = Depends(deps.get_db),
+):
+    """
+    **Endpoint público.**
+
+    Permite a un usuario establecer una nueva contraseña utilizando el token
+    que le fue proporcionado por un administrador.
+    """
+    logger.info(f"Intento de confirmar reseteo de contraseña para usuario '{reset_data.username}'.")
+    try:
+        usuario_service.confirm_password_reset(
+            db,
+            username=reset_data.username,
+            token=reset_data.token,
+            new_password=reset_data.new_password
+        )
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            f"Error al confirmar el reseteo de contraseña para '{reset_data.username}'. Error: {e}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ocurrió un error al resetear la contraseña."
+        )
+        
+    return Msg(msg="La contraseña ha sido actualizada exitosamente.")

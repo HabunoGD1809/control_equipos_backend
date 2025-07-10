@@ -8,7 +8,7 @@ from sqlalchemy import select, func, exc as sqlalchemy_exc
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
 
-from app.core.permissions import PERM_ADMIN_RESERVAS, PERM_CREAR_RESERVAS
+from app.core import permissions as perms
 from app.core.security import user_has_permissions
 from app.models.reserva_equipo import ReservaEquipo
 from app.models.usuario import Usuario
@@ -38,13 +38,12 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         """
         Crea una nueva reserva, validando equipo, disponibilidad de horario
         y estableciendo el estado inicial basado en los permisos del usuario.
-        NO realiza db.commit().
+        NO realiza db.commit() ni db.flush().
         """
         logger.debug(f"Usuario '{current_user.nombre_usuario}' intentando crear reserva para Equipo ID {obj_in.equipo_id} de {obj_in.fecha_hora_inicio} a {obj_in.fecha_hora_fin}")
 
         equipo = equipo_service.get_or_404(db, id=obj_in.equipo_id)
         
-        # Validar que el equipo esté en un estado reservable
         if equipo.estado.nombre != "Disponible":
             logger.warning(f"Intento de reservar equipo '{equipo.nombre}' (ID: {equipo.id}) que no está disponible. Estado actual: '{equipo.estado.nombre}'.")
             raise HTTPException(
@@ -58,48 +57,29 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
 
         reserva_data = obj_in.model_dump()
         
-        # *** LÓGICA DE ESTADO INICIAL ***
-        # Comprueba si el usuario tiene permiso para aprobar reservas.
-        if user_has_permissions(current_user, {PERM_ADMIN_RESERVAS}):
-            # Si tiene permiso, la reserva se crea como confirmada directamente.
+        if user_has_permissions(current_user, {perms.PERM_APROBAR_RESERVAS}):
             reserva_data['estado'] = EstadoReservaEnum.CONFIRMADA
             reserva_data['aprobado_por_id'] = current_user.id
             reserva_data['fecha_aprobacion'] = datetime.now(timezone.utc)
             logger.info(f"Usuario '{current_user.nombre_usuario}' tiene permisos. Creando reserva como 'Confirmada'.")
         else:
-            # Si no tiene permiso, la reserva queda pendiente de aprobación.
             reserva_data['estado'] = EstadoReservaEnum.PENDIENTE_APROBACION
             logger.info(f"Usuario '{current_user.nombre_usuario}' no tiene permisos de aprobación. Reserva creada como 'Pendiente Aprobacion'.")
-
 
         db_obj = self.model(
             **reserva_data,
             usuario_solicitante_id=current_user.id
         )
 
-        try:
-            db.add(db_obj)
-            db.flush() # Importante: flush para que la constraint de la DB se evalúe
-            logger.info(f"Reserva para equipo '{equipo.nombre}' (Horario: {db_obj.fecha_hora_inicio} - {db_obj.fecha_hora_fin}) preparada para ser creada.")
-            return db_obj
-        except IntegrityError as e:
-            db.rollback() # Revertimos la sesión
-            original_exc = getattr(e, 'orig', None)
-            pgcode = getattr(original_exc, 'pgcode', None) if original_exc else None
-            
-            logger.warning(f"Error de Integridad al crear reserva. PGCode: {pgcode}. Detalle: {original_exc or str(e)}")
+        db.add(db_obj)
+        # --- CORRECCIÓN ---
+        # Se elimina la llamada a db.flush() para prevenir errores de concurrencia en la sesión.
+        # La validación de solapamiento se delega al db.commit() en la capa de la API,
+        # que es donde la constraint de la base de datos se evaluará de forma atómica.
+        logger.info(f"Reserva para equipo '{equipo.nombre}' (Horario: {db_obj.fecha_hora_inicio} - {db_obj.fecha_hora_fin}) preparada para ser creada.")
+        return db_obj
 
-            # Comprueba si el error es por la restricción de exclusión (solapamiento de fechas)
-            if pgcode == EXCLUSION_VIOLATION_PGCODE or (original_exc and "reservas_equipo_equipo_id_periodo_reserva_excl" in str(original_exc).lower()):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Conflicto de reserva: El equipo '{equipo.nombre}' ya está reservado en el horario solicitado.",
-                ) from e
-            else:
-                # Otros errores de integridad (e.g., FK no encontrada)
-                logger.error(f"Error de integridad no esperado al crear reserva: {original_exc or str(e)}", exc_info=True)
-                raise
-
+    # (El resto de los métodos del servicio no necesitan cambios)
     def update(
         self,
         db: Session,
@@ -107,9 +87,6 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         db_obj: ReservaEquipo,
         obj_in: Union[ReservaEquipoUpdate, Dict[str, Any]]
     ) -> ReservaEquipo:
-        """
-        Actualiza campos permitidos de una reserva (ej: horario, propósito, notas).
-        """
         update_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
         reserva_id = db_obj.id
         logger.debug(f"Intentando actualizar reserva ID {reserva_id} con datos: {update_data}")
@@ -120,7 +97,7 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
             EstadoReservaEnum.CANCELADA_GESTOR,
             EstadoReservaEnum.RECHAZADA
         ]
-        if db_obj.estado in estados_no_modificables:
+        if db_obj.estado in [e.value for e in estados_no_modificables]:
             logger.warning(f"Intento de modificar reserva ID {reserva_id} en estado no modificable: '{db_obj.estado}'.")
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede modificar una reserva en estado '{db_obj.estado}'.")
 
@@ -173,21 +150,21 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
 
         if db_obj.estado == nuevo_estado.value:
             if db_obj.notas_administrador != estado_in.notas_administrador:
-                 logger.info(f"Actualizando solo notas_administrador para reserva ID {reserva_id} (estado sin cambios: '{db_obj.estado}').")
-                 db_obj.notas_administrador = estado_in.notas_administrador
-                 db.add(db_obj)
-                 return db_obj
+                logger.info(f"Actualizando solo notas_administrador para reserva ID {reserva_id} (estado sin cambios: '{db_obj.estado}').")
+                db_obj.notas_administrador = estado_in.notas_administrador
+                db.add(db_obj)
+                return db_obj
             logger.info(f"Estado de reserva ID {reserva_id} ya es '{nuevo_estado.value}'. No se realizan cambios.")
             return db_obj
 
-        if db_obj.estado in [EstadoReservaEnum.FINALIZADA.value, EstadoReservaEnum.CANCELADA_USUARIO.value, EstadoReservaEnum.CANCELADA_GESTOR.value, EstadoReservaEnum.RECHAZADA.value]:
+        if db_obj.estado in [e.value for e in [EstadoReservaEnum.FINALIZADA, EstadoReservaEnum.CANCELADA_USUARIO, EstadoReservaEnum.CANCELADA_GESTOR, EstadoReservaEnum.RECHAZADA]]:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede cambiar el estado de una reserva que ya está '{db_obj.estado}'.")
 
         if nuevo_estado == EstadoReservaEnum.CONFIRMADA:
-             if db_obj.estado != EstadoReservaEnum.PENDIENTE_APROBACION.value:
-                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede confirmar una reserva en estado '{db_obj.estado}'.")
-             db_obj.aprobado_por_id = current_user.id
-             db_obj.fecha_aprobacion = datetime.now(timezone.utc)
+            if db_obj.estado != EstadoReservaEnum.PENDIENTE_APROBACION.value:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"No se puede confirmar una reserva en estado '{db_obj.estado}'.")
+            db_obj.aprobado_por_id = current_user.id
+            db_obj.fecha_aprobacion = datetime.now(timezone.utc)
 
         db_obj.estado = nuevo_estado.value
         if estado_in.notas_administrador is not None:
@@ -211,26 +188,26 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         reserva_id = db_obj.id
         
         if check_data.check_in_time is not None:
-              logger.info(f"Usuario '{current_user.nombre_usuario}' realizando check-in para reserva ID {reserva_id}.")
-              if db_obj.estado != EstadoReservaEnum.CONFIRMADA.value:
-                  raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Solo se puede hacer check-in de reservas en estado '{EstadoReservaEnum.CONFIRMADA.value}'. Estado actual: '{db_obj.estado}'.")
-              if db_obj.check_in_time is not None:
-                  raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esta reserva ya tiene un check-in registrado.")
-              
-              db_obj.check_in_time = check_data.check_in_time
-              db_obj.estado = EstadoReservaEnum.EN_CURSO.value
+            logger.info(f"Usuario '{current_user.nombre_usuario}' realizando check-in para reserva ID {reserva_id}.")
+            if db_obj.estado != EstadoReservaEnum.CONFIRMADA.value:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Solo se puede hacer check-in de reservas en estado '{EstadoReservaEnum.CONFIRMADA.value}'. Estado actual: '{db_obj.estado}'.")
+            if db_obj.check_in_time is not None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esta reserva ya tiene un check-in registrado.")
+            
+            db_obj.check_in_time = check_data.check_in_time
+            db_obj.estado = EstadoReservaEnum.EN_CURSO.value
 
         elif check_data.check_out_time is not None:
-              logger.info(f"Usuario '{current_user.nombre_usuario}' realizando check-out para reserva ID {reserva_id}.")
-              if db_obj.estado != EstadoReservaEnum.EN_CURSO.value:
-                  raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Solo se puede hacer check-out de reservas en estado '{EstadoReservaEnum.EN_CURSO.value}'. Estado actual: '{db_obj.estado}'.")
-              if db_obj.check_out_time is not None:
-                  raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esta reserva ya tiene un check-out registrado.")
+            logger.info(f"Usuario '{current_user.nombre_usuario}' realizando check-out para reserva ID {reserva_id}.")
+            if db_obj.estado != EstadoReservaEnum.EN_CURSO.value:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Solo se puede hacer check-out de reservas en estado '{EstadoReservaEnum.EN_CURSO.value}'. Estado actual: '{db_obj.estado}'.")
+            if db_obj.check_out_time is not None:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esta reserva ya tiene un check-out registrado.")
 
-              db_obj.check_out_time = check_data.check_out_time
-              db_obj.estado = EstadoReservaEnum.FINALIZADA.value
-              if check_data.notas_devolucion is not None:
-                  db_obj.notas_devolucion = check_data.notas_devolucion
+            db_obj.check_out_time = check_data.check_out_time
+            db_obj.estado = EstadoReservaEnum.FINALIZADA.value
+            if check_data.notas_devolucion is not None:
+                db_obj.notas_devolucion = check_data.notas_devolucion
         else:
             logger.warning(f"Intento de check-in/out para reserva ID {reserva_id} sin especificar tiempo de check-in o check-out.")
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Debe proporcionar check_in_time o check_out_time.")
@@ -245,7 +222,6 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         """Busca reservas para un equipo que se solapan con un rango de tiempo dado."""
         logger.debug(f"Buscando reservas para Equipo ID {equipo_id} entre {start_time} y {end_time}")
         
-        # Corrección: Uso de la función nativa de PostgreSQL tstzrange para el rango de tiempo
         existing_reservation_range = func.tstzrange(self.model.fecha_hora_inicio, self.model.fecha_hora_fin, '()')
         new_reservation_range = func.tstzrange(start_time, end_time, '()')
 

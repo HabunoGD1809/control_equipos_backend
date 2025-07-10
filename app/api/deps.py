@@ -136,10 +136,10 @@ def require_admin(current_user: models.Usuario = Depends(get_current_active_user
     Dependencia que verifica si el usuario actual tiene el permiso de 
     administración general del sistema.
     """
-    if not user_has_permissions(current_user, {perms.PERM_ADMIN_SISTEMA}):
+    if not user_has_permissions(current_user, {perms.PERM_ADMINISTRAR_SISTEMA}):
         logger.warning(
             f"Acceso denegado: Usuario '{current_user.nombre_usuario}' "
-            f"intentó acceder a un recurso de administrador sin el permiso '{perms.PERM_ADMIN_SISTEMA}'."
+            f"intentó acceder a un recurso de administrador sin el permiso '{perms.PERM_ADMINISTRAR_SISTEMA}'."
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

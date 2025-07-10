@@ -8,7 +8,7 @@ from sqlalchemy import select
 from fastapi import HTTPException, status
 
 # Importar modelos y schemas
-from app.core.permissions import ADMIN_ROLE_NAME
+# from app.core.permissions import ADMIN_ROLE_NAME
 from app.models.usuario import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
 

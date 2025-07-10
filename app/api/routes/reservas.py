@@ -6,6 +6,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from psycopg.errors import ExclusionViolation
 
 from app.api import deps
 from app.core import permissions as perms
@@ -23,7 +24,7 @@ router = APIRouter()
 @router.post("/",
              response_model=ReservaEquipo,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([perms.PERM_CREAR_RESERVAS]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_RESERVAR_EQUIPOS]))],
              summary="Crear una nueva Reserva de Equipo",
              response_description="La reserva creada.")
 def create_reserva(
@@ -44,29 +45,30 @@ def create_reserva(
         db.commit()
         db.refresh(reserva)
         # Refrescar relaciones anidadas para que se muestren en la respuesta JSON
-        db.refresh(reserva, attribute_names=['equipo', 'solicitante', 'aprobado_por'])
+        if reserva.equipo: db.refresh(reserva.equipo)
+        if reserva.solicitante: db.refresh(reserva.solicitante)
+        if reserva.aprobado_por: db.refresh(reserva.aprobado_por)
+        
         logger.info(f"Reserva ID {reserva.id} creada exitosamente con estado '{reserva.estado}'.")
         return reserva
     except HTTPException as http_exc:
+        db.rollback()
         logger.warning(f"Error HTTP al crear reserva: {http_exc.detail}")
         raise http_exc
     except IntegrityError as e:
         db.rollback()
-        error_detail = str(getattr(e, 'orig', e))
-        if "reservas_equipo_equipo_id_tstzrange_excl" in error_detail.lower():
+        if isinstance(getattr(e, 'orig', None), ExclusionViolation):
             logger.warning(f"Conflicto de reserva para equipo {reserva_in.equipo_id} en las fechas solicitadas.")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Conflicto de reserva: El equipo ya está reservado o no disponible en el horario solicitado.",
-            )
-        logger.error(f"Error de Integridad no manejado por el servicio al crear reserva: {error_detail}", exc_info=True)
+            )            
+        logger.error(f"Error de Integridad no manejado al crear reserva: {e.orig or str(e)}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al crear la reserva.")
     except Exception as e:
         db.rollback()
         logger.error(f"Error inesperado creando reserva: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor.")
-
-# ---
 
 @router.get("/",
             response_model=List[ReservaEquipo],
@@ -88,11 +90,9 @@ def read_reservas(
     Requiere el permiso: `ver_reservas`.
     """
     logger.info(f"Usuario '{current_user.nombre_usuario}' listando reservas con filtros.")
-    # Implementa el filtrado en el servicio o aquí mismo
+    # TODO implementar el filtrado en el servicio o aquí mismo
     reservas = reserva_equipo_service.get_multi(db, skip=skip, limit=limit)
     return reservas
-
-# ---
 
 @router.get("/{reserva_id}",
             response_model=ReservaEquipo,
@@ -106,8 +106,6 @@ def read_reserva_by_id(
     """Obtiene la información detallada de una reserva específica."""
     logger.info(f"Usuario '{current_user.nombre_usuario}' solicitando reserva ID: {reserva_id}.")
     return reserva_equipo_service.get_or_404(db, id=reserva_id)
-
-# ---
 
 @router.put("/{reserva_id}",
             response_model=ReservaEquipo,
@@ -128,8 +126,8 @@ def update_reserva(
     db_reserva = reserva_equipo_service.get_or_404(db, id=reserva_id)
 
     is_owner = db_reserva.usuario_solicitante_id == current_user.id
-    can_manage_all = deps.user_has_permissions(current_user, {perms.PERM_ADMIN_RESERVAS})
-    can_edit_own = deps.user_has_permissions(current_user, {perms.PERM_CREAR_RESERVAS})
+    can_manage_all = deps.user_has_permissions(current_user, {perms.PERM_APROBAR_RESERVAS})
+    can_edit_own = deps.user_has_permissions(current_user, {perms.PERM_RESERVAR_EQUIPOS})
     is_editable_state = db_reserva.estado in [EstadoReservaEnum.PENDIENTE_APROBACION.value, EstadoReservaEnum.CONFIRMADA.value]
 
     if not (can_manage_all or (is_owner and is_editable_state and can_edit_own)):
@@ -156,11 +154,9 @@ def update_reserva(
         logger.error(f"Error inesperado al actualizar reserva {reserva_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor.")
 
-# ---
-
 @router.patch("/{reserva_id}/estado",
               response_model=ReservaEquipo,
-              dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMIN_RESERVAS]))],
+              dependencies=[Depends(deps.PermissionChecker([perms.PERM_APROBAR_RESERVAS]))],
               summary="Actualizar Estado de una Reserva (Admin/Gestor)")
 def update_reserva_estado(
     *,
@@ -185,8 +181,6 @@ def update_reserva_estado(
         logger.error(f"Error inesperado cambiando estado de reserva ID {reserva_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al cambiar el estado.")
 
-# ---
-
 @router.post("/{reserva_id}/cancelar",
              response_model=ReservaEquipo,
              summary="Cancelar una Reserva Propia")
@@ -203,7 +197,7 @@ def cancel_reserva_propia(
     if db_reserva.usuario_solicitante_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No puede cancelar una reserva que no es suya.")
     
-    if not deps.user_has_permissions(current_user, [perms.PERM_CREAR_RESERVAS]):
+    if not deps.user_has_permissions(current_user, [perms.PERM_RESERVAR_EQUIPOS]):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tiene el permiso necesario para cancelar reservas.")
         
     if db_reserva.estado not in ['Pendiente Aprobacion', 'Confirmada']:
@@ -223,8 +217,6 @@ def cancel_reserva_propia(
         logger.error(f"Error inesperado cancelando reserva propia ID {reserva_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al cancelar la reserva.")
 
-# ---
-
 @router.patch("/{reserva_id}/check-in-out",
               response_model=ReservaEquipo,
               summary="Realizar Check-in o Check-out de una Reserva")
@@ -242,13 +234,13 @@ def check_in_out_reserva(
     db_reserva = reserva_equipo_service.get_or_404(db, id=reserva_id)
     
     is_owner = db_reserva.usuario_solicitante_id == current_user.id
-    is_admin = deps.user_has_permissions(current_user, [perms.PERM_ADMIN_RESERVAS])
+    is_admin = deps.user_has_permissions(current_user, [perms.PERM_APROBAR_RESERVAS])
 
-    if not (is_admin or (is_owner and deps.user_has_permissions(current_user, [perms.PERM_CREAR_RESERVAS]))):
-         raise HTTPException(
-             status_code=status.HTTP_403_FORBIDDEN,
-             detail="No tiene permisos para realizar esta acción en esta reserva."
-         )
+    if not (is_admin or (is_owner and deps.user_has_permissions(current_user, [perms.PERM_RESERVAR_EQUIPOS]))):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No tiene permisos para realizar esta acción en esta reserva."
+        )
 
     try:
         updated_reserva = reserva_equipo_service.check_in_out(db=db, db_obj=db_reserva, check_data=check_data, current_user=current_user)
@@ -263,11 +255,9 @@ def check_in_out_reserva(
         logger.error(f"Error inesperado en check-in/out para reserva {reserva_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor.")
 
-# ---
-
 @router.delete("/{reserva_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMIN_RESERVAS]))],
+               dependencies=[Depends(deps.PermissionChecker([perms.PERM_APROBAR_RESERVAS]))],
                summary="Eliminar una Reserva (Admin)")
 def delete_reserva(
     *,

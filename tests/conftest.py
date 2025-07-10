@@ -48,6 +48,13 @@ logger.info(f"Usando URL de BD para tests: {TEST_SQLALCHEMY_DATABASE_URL}")
 engine = create_engine(TEST_SQLALCHEMY_DATABASE_URL, echo=False, pool_pre_ping=True)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+@pytest.fixture(scope="session")
+def app() -> FastAPI:
+    """
+    Fixture que proporciona la instancia de la aplicación FastAPI para los tests.
+    """
+    return fastapi_app
+
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_db():
     logger.info("== Iniciando configuración de DB para la sesión de tests ==")
@@ -73,7 +80,7 @@ def db() -> Generator[Session, None, None]:
         logger.debug(f"DB Session {session_identifier}: Cerrada y rollback completado.")
 
 @pytest_asyncio.fixture(scope="function")
-async def client(db: Session) -> AsyncGenerator[AsyncClient, None]:
+async def client(app: FastAPI, db: Session) -> AsyncGenerator[AsyncClient, None]:
     """Fixture para obtener un cliente HTTP asíncrono para interactuar con la app."""
     def override_get_db_for_test():
         nonlocal db
@@ -85,21 +92,24 @@ async def client(db: Session) -> AsyncGenerator[AsyncClient, None]:
             logger.debug(f"Override get_db: Finalizando uso de sesión {session_identifier}")
             pass
 
-    original_get_db = fastapi_app.dependency_overrides.get(get_db)
-    fastapi_app.dependency_overrides[get_db] = override_get_db_for_test
+    original_get_db = app.dependency_overrides.get(get_db)
+    app.dependency_overrides[get_db] = override_get_db_for_test
     logger.debug(f"AsyncClient: Dependencia get_db sobreescrita con {override_get_db_for_test}")
 
-    transport = ASGITransport(app=fastapi_app) # type: ignore
+    transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as test_client:
-        logger.debug(f"AsyncClient creado para test contra app: {fastapi_app}")
+        logger.debug(f"AsyncClient creado para test contra app: {app}")
         yield test_client
 
     if original_get_db:
-         fastapi_app.dependency_overrides[get_db] = original_get_db
-         logger.debug("AsyncClient: Dependencia get_db restaurada.")
+        app.dependency_overrides[get_db] = original_get_db
+        logger.debug("AsyncClient: Dependencia get_db restaurada.")
     else:
-         del fastapi_app.dependency_overrides[get_db]
-         logger.debug("AsyncClient: Dependencia get_db eliminada del override.")
+        # --- CORRECCIÓN FINAL ---
+        # Usamos .pop() en lugar de 'del'. Esto elimina la clave si existe,
+        # y no hace nada (sin dar error) si ya fue eliminada por otro lado.
+        app.dependency_overrides.pop(get_db, None)
+        logger.debug("AsyncClient: Dependencia get_db eliminada del override (de forma segura).")
     logger.debug("AsyncClient fixtures limpiados.")
 
 
@@ -119,8 +129,8 @@ async def get_auth_token(client: AsyncClient, username: str, password: str) -> s
             logger.info(f"Token obtenido exitosamente para '{username}'.")
             return access_token
         else:
-             logger.error(f"No se encontró 'access_token' en la respuesta para '{username}'. Respuesta: {token_data}")
-             return None
+            logger.error(f"No se encontró 'access_token' en la respuesta para '{username}'. Respuesta: {token_data}")
+            return None
     except httpx.HTTPStatusError as e:
         status_code = e.response.status_code
         try:
@@ -229,7 +239,7 @@ def _ensure_rol_with_permissions(db: Session, rol_name: str, descripcion: str, r
             db.flush()
             db.refresh(rol)
             if rol.permisos is not None:
-                 db.refresh(rol, attribute_names=['permisos'])
+                db.refresh(rol, attribute_names=['permisos'])
             logger.info(f"Rol '{rol_name}' (ID: {rol.id}) asegurado/actualizado con {len(rol.permisos)} permisos.")
         except Exception as e:
             logger.critical(f"Error en flush/refresh para rol '{rol_name}': {e}", exc_info=True)
@@ -800,7 +810,7 @@ async def create_test_user_directly(db: Session, test_rol_usuario_regular: Rol) 
     db.refresh(user)
     db.refresh(user, attribute_names=['rol'])
     if not user.rol:
-         pytest.fail(f"Rol no cargado para usuario directo '{username}' después de refresh.")
+        pytest.fail(f"Rol no cargado para usuario directo '{username}' después de refresh.")
     return user
 
 @pytest.fixture(scope="function")

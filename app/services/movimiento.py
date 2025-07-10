@@ -7,7 +7,6 @@ from sqlalchemy import select, text, exc as sqlalchemy_exc
 from fastapi import HTTPException, status
 import logging
 
-# ✅ Corrección aplicada aquí
 try:
     from psycopg import errors as psycopg_errors
     PG_RaiseException: type[Exception] = psycopg_errors.RaiseException
@@ -61,11 +60,12 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
     ) -> Movimiento:
         """
         Crea un nuevo movimiento LLAMANDO a la función de base de datos 'registrar_movimiento_equipo'.
+        Esta función ahora maneja la lógica de bloqueo para evitar race conditions.
         NO realiza db.commit().
         """
         logger.info(f"Usuario '{registrado_por_usuario.nombre_usuario}' intentando registrar movimiento tipo '{obj_in.tipo_movimiento}' para equipo ID '{obj_in.equipo_id}'.")
 
-        tipo_movimiento_valor_str = obj_in.tipo_movimiento
+        tipo_movimiento_valor_str = obj_in.tipo_movimiento.value if hasattr(obj_in.tipo_movimiento, 'value') else obj_in.tipo_movimiento
 
         try:
             stmt = text(
@@ -130,7 +130,7 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=diag_message)
                 if any(msg in error_lower for msg in ["obligatorio para", "obligatorios para", "tipo de movimiento no válido"]):
                     raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=diag_message)
-                if "no permite movimientos actualmente" in error_lower:
+                if "no permite movimientos actualmente" in error_lower or "equipo bloqueado" in error_lower:
                     raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=diag_message)
                 if "requiere autorización previa" in error_lower:
                     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=diag_message)
@@ -155,13 +155,11 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
         mov_id = db_obj.id
         logger.debug(f"Intentando actualizar movimiento ID {mov_id} con datos: {update_data}")
         
-        # Un movimiento cancelado no se puede modificar.
         if db_obj.estado == "Cancelado":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No se pueden modificar movimientos cancelados.")
 
-        # Lógica de negocio: Si el movimiento está 'Completado', solo se pueden actualizar ciertos campos.
         if db_obj.estado == "Completado":
-            allowed_fields = {"observaciones", "recibido_por"} # Campos permitidos para un mov. completado
+            allowed_fields = {"observaciones", "recibido_por"}
             for field in update_data:
                 if field not in allowed_fields:
                     raise HTTPException(
@@ -169,7 +167,6 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
                         detail=f"No se pueden modificar el campo '{field}' de un movimiento en estado 'Completado'."
                     )
         
-        # Filtramos por los campos que el schema de actualización permite
         allowed_update_fields = ["observaciones", "fecha_retorno", "recibido_por"]
         filtered_update_data = {k: v for k, v in update_data.items() if k in allowed_update_fields}
 
@@ -189,7 +186,6 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
         mov_id = movimiento.id
         logger.warning(f"Usuario '{current_user.nombre_usuario}' intentando cancelar movimiento ID: {mov_id}")
 
-        # Solo se pueden cancelar movimientos que no estén en un estado final
         cancelables_states = ['Pendiente', 'Autorizado', 'Programado']
 
         if movimiento.estado not in cancelables_states:
@@ -207,15 +203,9 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
             "observaciones": new_observaciones,
         }
         
-        # Aquí no se revierte el estado del equipo porque un movimiento en estado
-        # 'Pendiente' o 'Autorizado' aún no ha alterado el estado del equipo en la DB.
-        # La función registrar_movimiento_equipo lo hace todo en una transacción.
-        # Si la lógica cambiara y un estado intermedio alterara el equipo, aquí iría la reversión.
-
         updated_movimiento = super().update(db, db_obj=movimiento, obj_in=update_data)
         logger.info(f"Movimiento ID {mov_id} preparado para ser cancelado (estado cambiado a 'Cancelado').")
         return updated_movimiento
-
 
     def get_multi_by_equipo(
         self, db: Session, *, equipo_id: UUID, skip: int = 0, limit: int = 100
@@ -232,7 +222,4 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
         result = db.execute(statement)
         return list(result.scalars().all())
 
-
 movimiento_service = MovimientoService(Movimiento)
-
-# todo se puse revetir 

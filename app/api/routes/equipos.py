@@ -77,7 +77,7 @@ def create_equipo(
         # El servicio .create() ya no hace commit y maneja validaciones previas (incluyendo formato N/S).
         equipo = equipo_service.create(db=db, obj_in=equipo_in)
         db.commit()
-        db.refresh(equipo)
+        # db.refresh(equipo)
         db.refresh(equipo, attribute_names=['estado', 'proveedor']) # Cargar relaciones para la respuesta
         logger.info(f"Equipo '{equipo.nombre}' (ID: {equipo.id}) creado exitosamente por '{current_user.nombre_usuario}'.")
         return equipo
@@ -197,11 +197,10 @@ def update_equipo(
     logger.info(f"Usuario '{current_user.nombre_usuario}' intentando actualizar equipo ID: {equipo_id} con datos: {equipo_in.model_dump(exclude_unset=True)}")
     db_equipo = equipo_service.get_or_404(db, id=equipo_id)
     try:
-        # El servicio .update() ya no hace commit y maneja validaciones previas (incluyendo formato N/S).
+        db.expire(db_equipo)
         updated_equipo = equipo_service.update(db=db, db_obj=db_equipo, obj_in=equipo_in)
         db.commit()
-        db.refresh(updated_equipo)
-        db.refresh(updated_equipo, attribute_names=['estado', 'proveedor']) # Cargar relaciones para la respuesta
+        db.refresh(updated_equipo, attribute_names=['estado', 'proveedor'])
         logger.info(f"Equipo '{updated_equipo.nombre}' (ID: {equipo_id}) actualizado exitosamente por '{current_user.nombre_usuario}'.")
         return updated_equipo
     except HTTPException as http_exc: # Errores de validación del servicio

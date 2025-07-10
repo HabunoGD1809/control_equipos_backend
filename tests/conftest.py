@@ -143,14 +143,18 @@ async def get_auth_token(client: AsyncClient, username: str, password: str) -> s
         logger.error(f"FALLO INESPERADO al obtener token para '{username}': Error={type(e).__name__}. Detail: {e}", exc_info=True)
         return None
 
-# Contraseñas de prueba
-TEST_USER_REGULAR_PASSWORD = "UsuarioPass123!"
-TEST_ADMIN_PASSWORD = "AdminPass123!"
-TEST_SUPERVISOR_PASSWORD = "SuperPass123!"
-TEST_TECNICO_PASSWORD = "TecnicoPass123!"
-TEST_AUDITOR_PASSWORD = "AuditorPass123!"
-TEST_TESTER_PASSWORD = "TesterPass123!"
-
+try:
+    TEST_USER_REGULAR_PASSWORD = settings.TEST_USER_REGULAR_PASSWORD
+    TEST_ADMIN_PASSWORD = settings.TEST_ADMIN_PASSWORD
+    TEST_SUPERVISOR_PASSWORD = settings.TEST_SUPERVISOR_PASSWORD
+    TEST_TECNICO_PASSWORD = settings.TEST_TECNICO_PASSWORD
+    TEST_AUDITOR_PASSWORD = settings.TEST_AUDITOR_PASSWORD
+    TEST_TESTER_PASSWORD = settings.TEST_TESTER_PASSWORD
+except AttributeError as e:
+    pytest.fail(
+        f"Falta una contraseña de prueba requerida en tu archivo .env. "
+        f"Asegúrate de que todas las variables TEST_*_PASSWORD estén configuradas. Error: {e}"
+    )
 
 @pytest.fixture(scope="function")
 def test_permisos_definidos(db: Session) -> Dict[str, Permiso]:

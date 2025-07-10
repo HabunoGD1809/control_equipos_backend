@@ -78,7 +78,15 @@ class Settings(BaseSettings):
     
     # --- Otras Configuraciones ---
     MAX_FAILED_ATTEMPTS_BEFORE_LOCK: int = int(os.getenv("MAX_FAILED_ATTEMPTS_BEFORE_LOCK", "5"))
-
+    
+    # --- Credenciales para pruebas ---
+    TEST_USER_REGULAR_PASSWORD: str = str(os.getenv("TEST_USER_REGULAR_PASSWORD"))
+    TEST_ADMIN_PASSWORD: str = str(os.getenv("TEST_ADMIN_PASSWORD"))
+    TEST_SUPERVISOR_PASSWORD: str = str(os.getenv("TEST_SUPERVISOR_PASSWORD"))
+    TEST_TECNICO_PASSWORD: str = str(os.getenv("TEST_TECNICO_PASSWORD"))
+    TEST_AUDITOR_PASSWORD: str = str(os.getenv("TEST_AUDITOR_PASSWORD"))
+    TEST_TESTER_PASSWORD: str = str(os.getenv("TEST_TESTER_PASSWORD"))
+    
     model_config = {
         "case_sensitive": True,
         "env_file": ".env",

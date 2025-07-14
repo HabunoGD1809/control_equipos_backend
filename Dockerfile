@@ -1,13 +1,13 @@
 # --- Etapa 1: Build ---
 # Usa una imagen base de Python
-FROM python:3.11-slim-buster as builder
+FROM python:3.11-slim-buster AS builder
 
 # Establecer directorio de trabajo
 WORKDIR /app
 
 # Establecer variables de entorno para Python
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1 \
+   PYTHONUNBUFFERED=1
 
 # --- CAMBIO CLAVE #1 ---
 # Instalar las dependencias del sistema necesarias para CONSTRUIR psycopg.

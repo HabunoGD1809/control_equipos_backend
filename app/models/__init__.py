@@ -1,4 +1,4 @@
-from app.db.base import Base
+# from app.db.base import Base
 
 from .audit_log import AuditLog
 from .asignacion_licencia import AsignacionLicencia
@@ -25,11 +25,9 @@ from .tipo_item_inventario import TipoItemInventario
 from .tipo_mantenimiento import TipoMantenimiento
 from .usuario import Usuario
 
-# Opcionalmente, puedes definir __all__ si quieres controlar lo que se exporta
-# cuando alguien hace 'from app.models import *', aunque no es estrictamente necesario
-# para el funcionamiento de SQLAlchemy/Alembic si los modelos están importados arriba.
+
 __all__ = [
-    "Base", 
+    # "Base", 
     "AuditLog",
     "AsignacionLicencia",
     "BackupLog",

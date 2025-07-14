@@ -1,90 +1,136 @@
-version: '3.8'
+# version: '3.8'
+
+# services:
+#   # Servicio Backend (FastAPI/Uvicorn)
+#   backend:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile # Apunta al Dockerfile en el mismo directorio
+#     container_name: control_equipos_backend
+#     # Mapeo de puertos: <host_port>:<container_port>
+#     ports:
+#       - "8086:8086" # Expone el puerto 8086 del contenedor al puerto 8086 del host
+#     # Inyectar variables de entorno desde el archivo .env
+#     env_file:
+#       - .env
+#     # Montar volumen para el código (útil en desarrollo para live reload, quitar para prod)
+#     # volumes:
+#     #   - .:/home/app # Monta el directorio actual en el workdir del contenedor
+#     # Depende de que la base de datos y redis estén listos
+#     depends_on:
+#       db:
+#         condition: service_healthy # Espera a que la DB esté saludable
+#       redis:
+#         condition: service_started # Espera a que Redis inicie
+#     networks:
+#       - control_equipos_net
+
+#   # Servicio Worker (Celery)
+#   worker:
+#     build:
+#       context: .
+#       dockerfile: Dockerfile # Puede usar el mismo Dockerfile
+#     container_name: control_equipos_worker
+#     # Comando para iniciar el worker Celery
+#     command: ["celery", "-A", "app.worker", "worker", "--loglevel=info"]
+#     env_file:
+#       - .env
+#     # volumes:
+#     #   - .:/home/app # Montar volumen para el código (útil en desarrollo)
+#     depends_on:
+#       db:
+#         condition: service_healthy
+#       redis:
+#         condition: service_started
+#     networks:
+#       - control_equipos_net
+
+#   # Servicio Base de Datos (PostgreSQL)
+#   db:
+#     image: postgres:15 # Usar una versión específica de Postgres
+#     container_name: control_equipos_db
+#     volumes:
+#       - postgres_data:/var/lib/postgresql/data/ # Persistir datos de la DB
+#       # Opcional: Montar scripts SQL para inicialización
+#       # - ./scripts/db_init:/docker-entrypoint-initdb.d
+#     env_file:
+#       - .env # Lee POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB del .env
+#     environment:
+#       POSTGRES_USER: ${POSTGRES_USER}
+#       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+#       POSTGRES_DB: ${POSTGRES_DB}
+#     ports:
+#       - "5433:5432" # Expone el puerto 5432 del contenedor al 5433 del host (¡Ojo con colisiones!)
+#     # Chequeo de salud para depends_on
+#     healthcheck:
+#       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+#       interval: 5s
+#       timeout: 5s
+#       retries: 5
+#     networks:
+#       - control_equipos_net
+
+#   # Servicio Redis (Broker/Backend Celery)
+#   redis:
+#     image: redis:7-alpine # Imagen ligera de Redis
+#     container_name: control_equipos_redis
+#     ports:
+#       - "6379:6379" # Expone Redis al host
+#     networks:
+#       - control_equipos_net
+
+# # Definir Red
+# networks:
+#   control_equipos_net:
+#     driver: bridge
+
+# # Definir Volumen Persistente para la DB
+# volumes:
+#   postgres_data:
+#     driver: local
+
 
 services:
-  # Servicio Backend (FastAPI/Uvicorn)
-  backend:
-    build:
-      context: .
-      dockerfile: Dockerfile # Apunta al Dockerfile en el mismo directorio
-    container_name: control_equipos_backend
-    # Mapeo de puertos: <host_port>:<container_port>
-    ports:
-      - "8086:8086" # Expone el puerto 8086 del contenedor al puerto 8086 del host
-    # Inyectar variables de entorno desde el archivo .env
-    env_file:
-      - .env
-    # Montar volumen para el código (útil en desarrollo para live reload, quitar para prod)
-    # volumes:
-    #   - .:/home/app # Monta el directorio actual en el workdir del contenedor
-    # Depende de que la base de datos y redis estén listos
-    depends_on:
-      db:
-        condition: service_healthy # Espera a que la DB esté saludable
-      redis:
-        condition: service_started # Espera a que Redis inicie
-    networks:
-      - control_equipos_net
-
-  # Servicio Worker (Celery)
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile # Puede usar el mismo Dockerfile
-    container_name: control_equipos_worker
-    # Comando para iniciar el worker Celery
-    command: ["celery", "-A", "app.worker", "worker", "--loglevel=info"]
-    env_file:
-      - .env
-    # volumes:
-    #   - .:/home/app # Montar volumen para el código (útil en desarrollo)
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
-    networks:
-      - control_equipos_net
-
-  # Servicio Base de Datos (PostgreSQL)
   db:
-    image: postgres:15 # Usar una versión específica de Postgres
+    image: postgres:15-alpine
     container_name: control_equipos_db
-    volumes:
-      - postgres_data:/var/lib/postgresql/data/ # Persistir datos de la DB
-      # Opcional: Montar scripts SQL para inicialización
-      # - ./scripts/db_init:/docker-entrypoint-initdb.d
-    env_file:
-      - .env # Lee POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB del .env
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+    env_file: .env
     ports:
-      - "5433:5432" # Expone el puerto 5432 del contenedor al 5433 del host (¡Ojo con colisiones!)
-    # Chequeo de salud para depends_on
+      - "5433:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
     networks:
       - control_equipos_net
 
-  # Servicio Redis (Broker/Backend Celery)
-  redis:
-    image: redis:7-alpine # Imagen ligera de Redis
-    container_name: control_equipos_redis
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: control_equipos_backend
     ports:
-      - "6379:6379" # Expone Redis al host
+      - "8086:8000"
+    env_file: .env
+    volumes:
+      - ./app:/home/app/app
+      - ./alembic:/home/app/alembic
+      - ./alembic.ini:/home/app/alembic.ini
+      - ./scripts:/home/app/scripts
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      db:
+        condition: service_healthy
     networks:
       - control_equipos_net
 
-# Definir Red
 networks:
   control_equipos_net:
     driver: bridge
 
-# Definir Volumen Persistente para la DB
 volumes:
   postgres_data:
     driver: local

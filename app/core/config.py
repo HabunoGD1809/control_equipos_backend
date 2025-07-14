@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     TEST_AUDITOR_PASSWORD: str = str(os.getenv("TEST_AUDITOR_PASSWORD"))
     TEST_TESTER_PASSWORD: str = str(os.getenv("TEST_TESTER_PASSWORD"))
     
+    # --- Credenciales para el Superusuario Inicial ---
+    SUPERUSER_EMAIL: str = str(os.getenv("SUPERUSER_EMAIL"))
+    SUPERUSER_PASSWORD: str = str(os.getenv("SUPERUSER_PASSWORD"))
+    
     model_config = {
         "case_sensitive": True,
         "env_file": ".env",

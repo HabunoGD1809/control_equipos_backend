@@ -3,9 +3,9 @@
 <p align="center">
   <img src="https://img.shields.io/badge/FastAPI-0.115.12-009688?style=for-the-badge&logo=fastapi" alt="FastAPI">
   <img src="https://img.shields.io/badge/SQLAlchemy-2.0-d71f00?style=for-the-badge&logo=sqlalchemy" alt="SQLAlchemy">
-  <img src="https://img.shields.io/badge/PostgreSQL-17-336791?style=for-the-badge&logo=postgresql" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python" alt="Python">
-  <img src="https://img.shields.io/badge/Docker-27.5.1-2496ED?style=for-the-badge&logo=docker" alt="Docker Ready">
+  <img src="https://img.shields.io/badge/PostgreSQL-15-336791?style=for-the-badge&logo=postgresql" alt="PostgreSQL">
+  <img src="https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python" alt="Python">
+  <img src="https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker" alt="Docker Ready">
 </p>
 
 <p align="center">
@@ -21,13 +21,9 @@
   - [📌 Acerca del Proyecto](#-acerca-del-proyecto)
   - [🚀 Funcionalidades Principales](#-funcionalidades-principales)
   - [🛠️ Tecnologías Utilizadas](#️-tecnologías-utilizadas)
-  - [🏁 Configuración y Ejecución](#-configuración-y-ejecución)
+  - [🏁 Configuración y Ejecución con Docker (Recomendado)](#-configuración-y-ejecución-con-docker-recomendado)
     - [Prerrequisitos](#prerrequisitos)
-    - [Variables de Entorno](#variables-de-entorno)
-    - [Base de Datos](#base-de-datos)
-    - [Instalación de Dependencias](#instalación-de-dependencias)
-    - [Ejecución (Desarrollo)](#ejecución-desarrollo)
-    - [Ejecución (Docker - Recomendado)](#ejecución-docker---recomendado)
+    - [Instrucciones de Instalación](#instrucciones-de-instalación)
   - [📚 Documentación de la API](#-documentación-de-la-api)
   - [📁 Estructura del Proyecto](#-estructura-del-proyecto)
   - [📝 TODO / Mejoras Futuras](#-todo--mejoras-futuras)
@@ -58,7 +54,6 @@ El proyecto está construido siguiendo las mejores prácticas de desarrollo de s
 - **Catálogos:** Administración de catálogos configurables (Proveedores, Estados, Tipos de Documento, etc.).
 - **Notificaciones:** Sistema de notificaciones internas.
 - **Auditoría y Logs:** Logs de Acceso y Auditoría de cambios, con endpoints para consultarlos.
-- **Dashboard:** Endpoint que provee métricas clave para una vista rápida del estado del sistema.
 - **Autenticación:** Sistema seguro basado en JWT (OAuth2 Password Flow).
 
 ---
@@ -67,89 +62,63 @@ El proyecto está construido siguiendo las mejores prácticas de desarrollo de s
 
 - **Backend:** [FastAPI](https://fastapi.tiangolo.com/)
 - **Base de Datos:** [PostgreSQL](https://www.postgresql.org/)
-- **ORM:** [SQLAlchemy](https://www.sqlalchemy.org/) (con `asyncio` a través de `asyncpg`)
+- **ORM:** [SQLAlchemy](https://www.sqlalchemy.org/)
 - **Validación de Datos:** [Pydantic](https://pydantic-docs.helpmanual.io/)
 - **Migraciones de BD:** [Alembic](https://alembic.sqlalchemy.org/)
 - **Autenticación:** JWT (OAuth2 Password Flow)
 - **Contenerización:** [Docker](https://www.docker.com/) & [Docker Compose](https://docs.docker.com/compose/)
-- **Tareas en Segundo Plano:** [Celery](https://docs.celeryq.dev/) con [Redis](https://redis.io/) como broker.
+- **Tareas en Segundo Plano (Opcional):** [Celery](https://docs.celeryq.dev/) con [Redis](https://redis.io/) como broker.
 
 ---
 
-## 🏁 Configuración y Ejecución
+## 🏁 Configuración y Ejecución con Docker (Recomendado)
+
+El método recomendado para ejecutar este proyecto es usando Docker, que gestiona la base de datos, el backend y todas sus dependencias automáticamente.
 
 ### Prerrequisitos
 
-- Python 3.13+
-- PostgreSQL Server (ej: v16+)
-- Redis (Opcional, si se usa Celery para tareas de fondo)
-- Docker y Docker Compose (Recomendado para fácil despliegue)
+- Docker
+- Docker Compose
 
-### Variables de Entorno
+### Instrucciones de Instalación
 
-1. Copia el archivo `.env.example` a un nuevo archivo llamado `.env`.
-   ```bash
-   cp .env.example .env
-   ```
+1.  **Clonar el Repositorio**
+    ```bash
+    git clone [https://github.com/HabunoGD1809/control_equipos_backend.git](https://github.com/HabunoGD1809/control_equipos_backend.git)
+    cd control_equipos_backend
+    ```
 
-2. Edita el archivo `.env` y configura las variables, especialmente:
-   - `SECRET_KEY`: Genera una clave segura (puedes usar `openssl rand -hex 32`).
-   - `POSTGRES_SERVER`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`: Datos de tu base de datos PostgreSQL.
-   - `BACKEND_CORS_ORIGINS`: Lista separada por comas de los orígenes de tu frontend (ej: `http://localhost:3000,http://127.0.0.1:3000`).
-   - `CELERY_BROKER_URL`, `CELERY_RESULT_BACKEND`: URLs de tu broker/backend Celery (ej: Redis).
+2.  **Configurar Variables de Entorno**
+    Copia el archivo de ejemplo y edítalo. Es crucial configurar las credenciales del superusuario y la clave secreta.
+    ```bash
+    cp .env.example .env
+    ```
+    **Importante:** Asegúrate de que `POSTGRES_SERVER` en tu archivo `.env` esté configurado como `db` para que el backend pueda conectarse al contenedor de la base de datos.
+    ```env
+    # En tu archivo .env
+    POSTGRES_SERVER=db
+    ```
 
-### Base de Datos
+3.  **Levantar los Contenedores**
+    Este comando construirá y levantará los contenedores del backend y la base de datos en segundo plano.
+    ```bash
+    docker-compose up --build -d
+    ```
 
-- Asegúrate de que el servidor PostgreSQL esté corriendo y la base de datos (`POSTGRES_DB`) exista.
-- **Creación de Estructura:**
-  - Ejecuta el script `structureControlEquipos.sql` en tu base de datos para crear todas las tablas, funciones, triggers, etc.
-- **Migraciones (Alembic):**
-  - (Alternativa al script SQL) Configura `alembic.ini` (ya apunta a `.env`).
-  - Aplica las migraciones: `alembic upgrade head`
-  - Si creaste la BD con el script SQL, puedes 'sellar' Alembic para que no intente crear las tablas de nuevo: `alembic stamp head`
-- **Datos Iniciales:**
-  - Ejecuta el script `datosControlEquipos.sql` para poblar la base de datos con roles, permisos, y datos de ejemplo iniciales.
+4.  **Crear la Estructura de la Base de Datos**
+    Con los contenedores corriendo, ejecuta este comando para que Alembic cree todas las tablas. **Solo necesitas hacer esto la primera vez que configuras el proyecto.**
+    ```bash
+    docker-compose exec backend alembic upgrade head
+    ```
+    *Cada vez que descargues nuevos cambios del repositorio que incluyan una nueva migración, deberás ejecutar este comando de nuevo para actualizar la base de datos.*
 
-### Instalación de Dependencias
+5.  **Crear el Usuario Administrador**
+    Ejecuta el script para crear el primer usuario con rol de administrador. Este paso es esencial para poder empezar a usar el sistema.
+    ```bash
+    docker-compose exec backend python scripts/create_superuser.py
+    ```
 
-1. Crea un entorno virtual (recomendado):
-   ```bash
-   python -m venv venv
-   source venv/bin/activate # Linux/macOS
-   # venv\Scripts\activate # Windows
-   ```
-
-2. Instala las dependencias:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Ejecución (Desarrollo)
-
-1. Inicia el servidor Uvicorn con recarga automática:
-   ```bash
-   uvicorn app.main:app --reload --host 0.0.0.0 --port 8086
-   ```
-
-2. (Si usas Celery) Inicia el worker en otra terminal:
-   ```bash
-   celery -A app.worker worker --loglevel=info
-   ```
-
-### Ejecución (Docker - Recomendado)
-
-1. Asegúrate de tener Docker y Docker Compose instalados.
-2. Verifica que tu archivo `.env` está configurado.
-3. Ejecuta:
-   ```bash
-   docker-compose up --build -d
-   ```
-   Esto levantará el backend, la base de datos, Redis y el worker de Celery.
-
-4. Para detener:
-   ```bash
-   docker-compose down
-   ```
+¡Listo! La API estará corriendo y accesible en `http://localhost:8086`.
 
 ---
 
@@ -175,7 +144,7 @@ Una vez que la aplicación está corriendo, puedes acceder a la documentación i
 │   ├── services/         # Lógica de negocio y acceso a datos
 │   └── tasks/            # Tareas asíncronas de Celery
 ├── logs/                 # Archivos de log generados
-├── scripts/              # Scripts de utilidad (ej. start.sh)
+├── scripts/              # Scripts de utilidad (ej. create_superuser.py)
 ├── tests/                # Pruebas unitarias y de integración
 ├── uploads/              # Directorio para archivos subidos
 ├── .env.example          # Plantilla de variables de entorno

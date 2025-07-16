@@ -21,54 +21,47 @@ from app.models.usuario import Usuario as UsuarioModel
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/",
-             response_model=ReservaEquipo,
-             status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([perms.PERM_RESERVAR_EQUIPOS]))],
-             summary="Crear una nueva Reserva de Equipo",
-             response_description="La reserva creada.")
+@router.post(
+    "/",
+    response_model=ReservaEquipo,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_RESERVAR_EQUIPOS]))],
+    summary="Crear una nueva Reserva de Equipo",
+    response_description="La reserva creada."
+)
 def create_reserva(
     *,
     db: Session = Depends(deps.get_db),
     reserva_in: ReservaEquipoCreate,
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
-    """
-    Crea una nueva reserva para un equipo.
-    - Usuarios con 'aprobar_reservas' la crean como 'Confirmada'.
-    - Otros usuarios la crean como 'Pendiente de Aprobación'.
-    Requiere el permiso: `reservar_equipos`.
-    """
+    """Crea una nueva reserva para un equipo."""
     logger.info(f"Usuario '{current_user.nombre_usuario}' creando reserva para Equipo ID {reserva_in.equipo_id}")
+
     try:
         reserva = reserva_equipo_service.create_with_user(db=db, obj_in=reserva_in, current_user=current_user)
-        db.commit()
-        db.refresh(reserva)
-        # Refrescar relaciones anidadas para que se muestren en la respuesta JSON
-        if reserva.equipo: db.refresh(reserva.equipo)
-        if reserva.solicitante: db.refresh(reserva.solicitante)
-        if reserva.aprobado_por: db.refresh(reserva.aprobado_por)
-        
-        logger.info(f"Reserva ID {reserva.id} creada exitosamente con estado '{reserva.estado}'.")
+        db.commit() # Intenta confirmar la transacción
+        db.refresh(reserva, attribute_names=['equipo', 'solicitante', 'aprobado_por'])
         return reserva
-    except HTTPException as http_exc:
-        db.rollback()
-        logger.warning(f"Error HTTP al crear reserva: {http_exc.detail}")
-        raise http_exc
     except IntegrityError as e:
         db.rollback()
-        if isinstance(getattr(e, 'orig', None), ExclusionViolation):
-            logger.warning(f"Conflicto de reserva para equipo {reserva_in.equipo_id} en las fechas solicitadas.")
+        # Comprueba si el error es por la restricción de exclusión
+        if isinstance(e.orig, ExclusionViolation):
+            logger.warning(f"Conflicto de reserva detectado para equipo {reserva_in.equipo_id}.")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Conflicto de reserva: El equipo ya está reservado o no disponible en el horario solicitado.",
-            )            
-        logger.error(f"Error de Integridad no manejado al crear reserva: {e.orig or str(e)}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al crear la reserva.")
+                detail="Conflicto de reserva: El equipo ya está reservado en el horario solicitado.",
+            )
+        # Si no, relanza la excepción para que el manejador de errores general la capture
+        raise e
     except Exception as e:
         db.rollback()
-        logger.error(f"Error inesperado creando reserva: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor.")
+        logger.error(f"Error inesperado al crear reserva para equipo {reserva_in.equipo_id}: {e}", exc_info=True)
+        # Esto será capturado por el manejador de errores genérico
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al procesar la solicitud."
+        )
 
 @router.get("/",
             response_model=List[ReservaEquipo],

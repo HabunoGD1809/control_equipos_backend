@@ -179,13 +179,14 @@ class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, Mante
         if tipo_mantenimiento_id:
             statement = statement.where(self.model.tipo_mantenimiento_id == tipo_mantenimiento_id)
         
-        # Filtrado por rango de fechas en 'fecha_programada'
         if start_date:
             statement = statement.where(self.model.fecha_programada >= start_date)
+        
         if end_date:
-            statement = statement.where(self.model.fecha_programada <= end_date)
+            end_of_day = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, 999999)
+            statement = statement.where(self.model.fecha_programada <= end_of_day)
 
-        statement = statement.order_by(self.model.fecha_programada.desc().nullslast(), self.model.created_at.desc()) # type: ignore
+        statement = statement.order_by(self.model.fecha_programada.desc().nullslast(), self.model.created_at.desc())
         statement = statement.offset(skip).limit(limit)
         
         result = db.execute(statement)

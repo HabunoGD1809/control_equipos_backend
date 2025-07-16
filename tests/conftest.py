@@ -378,7 +378,7 @@ def _ensure_user(db: Session, username: str, password: str, rol: Rol, email: str
             db.add(user)
 
     try:
-        db.flush()
+        db.commit()
         db.refresh(user)
         db.refresh(user, attribute_names=['rol'])
         if user.rol and user.rol.permisos is not None:
@@ -468,7 +468,9 @@ def test_estado_disponible(db: Session) -> EstadoEquipo:
     estado = db.query(EstadoEquipo).filter(EstadoEquipo.nombre == nombre_estado).first()
     if not estado:
         estado = EstadoEquipo(nombre=nombre_estado, permite_movimientos=True, color_hex="#4CAF50", es_estado_final=False) # type: ignore
-        db.add(estado); db.flush(); db.refresh(estado)
+        db.add(estado); 
+        db.commit()
+        db.refresh(estado)
     return estado
 
 @pytest.fixture(scope="function")

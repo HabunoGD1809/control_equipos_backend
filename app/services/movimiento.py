@@ -7,6 +7,8 @@ from sqlalchemy import select, text, exc as sqlalchemy_exc
 from fastapi import HTTPException, status
 import logging
 
+from app.schemas.enums import TipoMovimientoEquipoEnum
+
 try:
     from psycopg import errors as psycopg_errors
     PG_RaiseException: type[Exception] = psycopg_errors.RaiseException
@@ -64,6 +66,9 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
         NO realiza db.commit().
         """
         logger.info(f"Usuario '{registrado_por_usuario.nombre_usuario}' intentando registrar movimiento tipo '{obj_in.tipo_movimiento}' para equipo ID '{obj_in.equipo_id}'.")
+        
+        if obj_in.tipo_movimiento == TipoMovimientoEquipoEnum.SALIDA_TEMPORAL and not obj_in.fecha_prevista_retorno:
+            raise HTTPException(status_code=422, detail="La fecha de retorno es obligatoria para una salida temporal.")
 
         tipo_movimiento_valor_str = obj_in.tipo_movimiento.value if hasattr(obj_in.tipo_movimiento, 'value') else obj_in.tipo_movimiento
 

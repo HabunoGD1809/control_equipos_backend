@@ -6,6 +6,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, DBAPIError as SQLAlchemyDBAPIError
+from psycopg.errors import RaiseException
 
 from app.api import deps
 from app.schemas.movimiento import Movimiento, MovimientoCreate, MovimientoUpdate
@@ -59,33 +60,27 @@ def create_movimiento(
             autorizado_por_id=autorizado_por_id_param
         )
         db.commit()
-        
         db.refresh(movimiento, attribute_names=['equipo', 'usuario_registrador', 'usuario_autorizador'])
-
-        logger.info(f"Movimiento ID {movimiento.id} ({movimiento.tipo_movimiento}) para equipo ID {movimiento.equipo_id} registrado exitosamente por '{current_user.nombre_usuario}'.")
+        logger.info(f"Movimiento ID {movimiento.id} ({movimiento.tipo_movimiento}) registrado exitosamente por '{current_user.nombre_usuario}'.")
         return movimiento
-    except HTTPException as http_exc: 
-        db.rollback() 
+    except HTTPException as http_exc:
+        db.rollback()  # ¡Importante!
         logger.warning(f"Error HTTP al registrar movimiento: {http_exc.status_code} - {http_exc.detail}")
         raise http_exc
-    except IntegrityError as e:
+    except IntegrityError as e: # Esto puede capturar el constraint de PostgreSQL
         db.rollback()
-        error_detail = str(getattr(e, 'orig', e))
-        logger.error(f"Error de integridad al registrar movimiento: {error_detail}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al registrar el movimiento (constraint).")
-    except SQLAlchemyDBAPIError as e:
-        db.rollback()
-        original_exc = getattr(e, 'orig', None)
-        error_message_for_client = str(original_exc if original_exc else e)
-        logger.error(f"Error DBAPI al registrar movimiento: {error_message_for_client}", exc_info=True)
-        
-        if PG_RaiseException and isinstance(original_exc, PG_RaiseException):
-            diag_message = getattr(getattr(original_exc, 'diag', None), 'message_primary', error_message_for_client)
-            if "equipo no encontrado" in diag_message.lower():
-                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=diag_message)
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error de base de datos al procesar: {diag_message}")
-
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al registrar el movimiento.")
+        # Si la base de datos devuelve un error de constraint específico, se puede manejar aquí.
+        # Por ejemplo, la función PL/pgSQL puede lanzar una excepción con un SQLSTATE específico.
+        if isinstance(e.orig, RaiseException):
+            # Analiza el mensaje de error de la base de datos
+            error_message = str(e.orig)
+            if "no permite movimientos" in error_message:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error_message)
+            else:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_message)
+        else:
+            logger.error(f"Error de integridad no manejado al registrar movimiento: {e}", exc_info=True)
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al registrar el movimiento.")
     except Exception as e:
         db.rollback()
         logger.error(f"Error inesperado registrando movimiento: {e}", exc_info=True)

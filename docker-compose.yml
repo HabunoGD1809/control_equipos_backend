@@ -120,6 +120,8 @@ services:
       - ./alembic:/home/app/alembic
       - ./alembic.ini:/home/app/alembic.ini
       - ./scripts:/home/app/scripts
+      - ./tests:/home/app/tests
+      - ./pytest.ini:/home/app/pytest.ini
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     depends_on:
       db:

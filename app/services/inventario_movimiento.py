@@ -45,7 +45,7 @@ class InventarioMovimientoService(BaseService[InventarioMovimiento, InventarioMo
 
         tipo_mov_valor = obj_in.tipo_movimiento.value
 
-        if tipo_mov_valor in ['Salida Uso', 'Salida Descarte', 'Ajuste Negativo', 'Transferencia Salida', 'Devolucion Proveedor', 'Devolucion Interna'] and not obj_in.ubicacion_origen:
+        if tipo_mov_valor in ['Salida Uso', 'Salida Descarte', 'Transferencia Salida', 'Devolucion Proveedor'] and not obj_in.ubicacion_origen:
              raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Ubicación de origen es requerida para el tipo de movimiento '{tipo_mov_valor}'.")
         if tipo_mov_valor in ['Entrada Compra', 'Ajuste Positivo', 'Transferencia Entrada', 'Devolucion Interna'] and not obj_in.ubicacion_destino:
              raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"Ubicación de destino es requerida para el tipo de movimiento '{tipo_mov_valor}'.")

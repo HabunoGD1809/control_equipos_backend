@@ -142,7 +142,7 @@ async def test_create_movimiento_missing_data_for_type(
     data = jsonable_encoder(movimiento_schema)
     response = await client.post(f"{settings.API_V1_STR}/movimientos/", headers=headers, json=data)
     assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY, f"Detalle error: {response.text}"
-    assert "obligatorio" in response.json()["detail"].lower()
+    assert "obligatoria" in response.json()["detail"].lower()
 
 async def test_read_movimientos_success(
     client: AsyncClient, auth_token_supervisor: str, equipo_para_movimiento: Equipo

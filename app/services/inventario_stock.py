@@ -6,20 +6,15 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func as sql_func
 from fastapi import HTTPException, status
 
-# Importar modelos y schemas
 from app.models.inventario_stock import InventarioStock
 from app.schemas.inventario_stock import InventarioStockUpdate
 from .base_service import BaseService 
 
 logger = logging.getLogger(__name__) 
 
-# CORREGIDO: Heredar de BaseService
 class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUpdate]):
     """
     Servicio para CONSULTAR y realizar actualizaciones menores en InventarioStock.
-    La cantidad_actual es modificada por triggers/funciones de BD basados en InventarioMovimiento.
-    Las operaciones que modifican datos NO realizan commit.
-    El commit debe ser manejado en la capa de la ruta.
     """
     def __init__(self):
         super().__init__(InventarioStock)
@@ -63,12 +58,17 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
     def get_stock_record(
         self, db: Session, *, tipo_item_id: UUID, ubicacion: str, lote: Optional[str] = None
     ) -> Optional[InventarioStock]:
-        """Obtiene un registro de stock específico por item, ubicación y lote."""
-        logger.debug(f"Buscando stock: TipoItem ID {tipo_item_id}, Ubicación '{ubicacion}', Lote '{lote}'")
+        """
+        Obtiene un registro de stock específico por item, ubicación y lote.
+        """
+        lote_a_buscar = lote if lote is not None else 'N/A'
+        
+        logger.debug(f"Buscando stock: TipoItem ID {tipo_item_id}, Ubicación '{ubicacion}', Lote '{lote_a_buscar}'")
+        
         statement = select(self.model).where(
             self.model.tipo_item_id == tipo_item_id,
             self.model.ubicacion == ubicacion,
-            self.model.lote.is_(lote) if lote is None else self.model.lote == lote
+            self.model.lote == lote_a_buscar
         )
         result = db.execute(statement)
         return result.scalar_one_or_none()
@@ -91,17 +91,17 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
     def get_stock_by_location(
         self, db: Session, *, ubicacion: str, skip: int = 0, limit: int = 100
     ) -> List[InventarioStock]:
-         """Obtiene todos los registros de stock para una ubicación."""
-         logger.debug(f"Listando stock para Ubicación: '{ubicacion}' (skip: {skip}, limit: {limit}).")
-         statement = (
+        """Obtiene todos los registros de stock para una ubicación."""
+        logger.debug(f"Listando stock para Ubicación: '{ubicacion}' (skip: {skip}, limit: {limit}).")
+        statement = (
             select(self.model)
             .where(self.model.ubicacion == ubicacion)
             .order_by(self.model.tipo_item_id, self.model.lote)
             .offset(skip)
             .limit(limit)
         )
-         result = db.execute(statement)
-         return list(result.scalars().all())
+        result = db.execute(statement)
+        return list(result.scalars().all())
 
     def get_total_stock_for_item(self, db: Session, *, tipo_item_id: UUID) -> int:
         """Calcula la cantidad total de stock para un item sumando todas las ubicaciones/lotes."""
@@ -120,7 +120,6 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
     ) -> InventarioStock:
         """
         Actualiza campos específicos (ej. lote, fecha_caducidad) de un registro de stock.
-        NO actualiza la cantidad_actual. NO realiza db.commit().
         """
         update_data = obj_in.model_dump(exclude_unset=True)
         stock_id = stock_record.id

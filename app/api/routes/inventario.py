@@ -290,7 +290,6 @@ def create_inventario_movimiento(
     El trigger de la base de datos se encargará de actualizar el stock total.
     """
     
-    # 1. Obtenemos el valor string del Enum para logging y validaciones
     tipo_mov_valor = movimiento_in.tipo_movimiento.value
     
     logger.info(
@@ -298,17 +297,7 @@ def create_inventario_movimiento(
         f"tipo '{tipo_mov_valor}' para TipoItem ID {movimiento_in.tipo_item_id}."
     )
 
-    # 2. Definimos qué tipos de movimiento son de salida
-    tipos_de_salida = [
-        TipoMovimientoInvEnum.SALIDA_USO,
-        TipoMovimientoInvEnum.SALIDA_DESCARTE,
-        TipoMovimientoInvEnum.AJUSTE_NEGATIVO,
-        TipoMovimientoInvEnum.TRANSFERENCIA_SALIDA,
-        TipoMovimientoInvEnum.DEVOLUCION_PROVEEDOR
-    ]
-
-    # 3. Verificamos el stock ANTES de intentar la operación si es una salida
-    if movimiento_in.tipo_movimiento in tipos_de_salida and movimiento_in.ubicacion_origen:
+    if movimiento_in.tipo_movimiento.es_salida() and movimiento_in.ubicacion_origen:
         stock_origen = inventario_stock_service.get_stock_record(
             db,
             tipo_item_id=movimiento_in.tipo_item_id,

@@ -31,6 +31,16 @@ class TipoMovimientoInvEnum(str, Enum):
     DEVOLUCION_PROVEEDOR = 'Devolucion Proveedor'
     DEVOLUCION_INTERNA = 'Devolucion Interna'
 
+    def es_salida(self) -> bool:
+        """Devuelve True si el tipo de movimiento representa una salida de stock."""
+        return self in [
+            TipoMovimientoInvEnum.SALIDA_USO,
+            TipoMovimientoInvEnum.SALIDA_DESCARTE,
+            TipoMovimientoInvEnum.AJUSTE_NEGATIVO,
+            TipoMovimientoInvEnum.TRANSFERENCIA_SALIDA,
+            TipoMovimientoInvEnum.DEVOLUCION_PROVEEDOR
+        ]
+        
 class TipoRelacionComponenteEnum(str, Enum):
     """Valores que coinciden con el CHECK constraint de la tabla `equipo_componentes`."""
     COMPONENTE = 'componente'
@@ -108,4 +118,3 @@ class EstadoMovimientoEquipoEnum(str, Enum):
     COMPLETADO = 'Completado'
     CANCELADO = 'Cancelado'
     RECHAZADO = 'Rechazado'
-

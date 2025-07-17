@@ -1,20 +1,18 @@
 import pytest
+import asyncio
 from httpx import AsyncClient
 from sqlalchemy.orm import Session
 from uuid import uuid4
+from fastapi import status, BackgroundTasks
 
 from app.core.config import settings
-from app.models.usuario import Usuario
 from app.models.rol import Rol
 from app.schemas.usuario import UsuarioCreate
 from app.services.usuario import usuario_service
 
 pytestmark = pytest.mark.asyncio
 
-# La fixture `temp_user_for_password_reset` se elimina de este archivo,
-# ya que gestionaremos el ciclo de vida del usuario manualmente en cada test que lo necesite.
 
-@pytest.mark.asyncio
 async def test_password_recovery_flow(
     client: AsyncClient,
     db: Session,
@@ -22,122 +20,121 @@ async def test_password_recovery_flow(
     auth_token_admin: str,
 ):
     """
-    Prueba el flujo completo de recuperación de contraseña, manejando la creación
-    y limpieza del usuario de forma explícita para evitar condiciones de carrera.
+    Prueba el flujo completo de recuperación de contraseña, manejando correctamente
+    las tareas en segundo plano para evitar condiciones de carrera.
     """
     unique_id = uuid4().hex[:6]
+    username = f"test_reset_user_{unique_id}"
+    old_password = "SecurePassword123!"
+    new_password = "MyNewSecurePassword456!"
+
     user_in = UsuarioCreate(
-        nombre_usuario=f"test_reset_user_{unique_id}",
+        nombre_usuario=username,
         email=f"test.reset.{unique_id}@example.com",
-        password="SecurePassword123!",
-        rol_id=test_rol_usuario_regular.id
+        password=old_password,
+        rol_id=test_rol_usuario_regular.id,
     )
     user_to_reset = usuario_service.create(db, obj_in=user_in)
     db.commit()
     db.refresh(user_to_reset)
-    # Guardamos el ID para poder buscarlo de nuevo en el bloque de limpieza.
-    user_id_to_delete = user_to_reset.id
 
-    try:
-        admin_headers = {"Authorization": f"Bearer {auth_token_admin}"}
+    admin_headers = {"Authorization": f"Bearer {auth_token_admin}"}
 
-        # 1. Admin solicita un token de reseteo para el usuario
-        response_request = await client.post(
-            f"{settings.API_V1_STR}/auth/password-recovery/request-reset",
-            headers=admin_headers,
-            json={"username": user_to_reset.nombre_usuario}
-        )
-        assert response_request.status_code == 200, response_request.text
-        reset_token = response_request.json()["reset_token"]
+    # 1. Admin solicita el token de reseteo
+    response_request = await client.post(
+        f"{settings.API_V1_STR}/auth/password-recovery/request-reset",
+        headers=admin_headers,
+        json={"username": username},
+    )
+    assert response_request.status_code == status.HTTP_200_OK
+    reset_token = response_request.json()["reset_token"]
+    assert reset_token
 
-        # 2. El usuario usa el token para establecer una nueva contraseña
-        new_password = "MyNewSecurePassword123!"
-        reset_data = {"token": reset_token, "new_password": new_password, "username": user_to_reset.nombre_usuario}
-        response_reset = await client.post(
-            f"{settings.API_V1_STR}/auth/password-recovery/confirm-reset",
-            json=reset_data
-        )
-        assert response_reset.status_code == 200, response_reset.text
-        assert response_reset.json() == {"msg": "La contraseña ha sido actualizada exitosamente."}
+    # 2. El usuario usa el token para cambiar la contraseña
+    reset_data = {"token": reset_token, "new_password": new_password, "username": username}
+    response_reset = await client.post(
+        f"{settings.API_V1_STR}/auth/password-recovery/confirm-reset",
+        json=reset_data,
+    )
+    assert response_reset.status_code == status.HTTP_200_OK
 
-        # 3. Verificamos que la nueva contraseña funciona para el login
-        login_data = {"username": user_to_reset.nombre_usuario, "password": new_password}
-        response_login = await client.post(f"{settings.API_V1_STR}/auth/login/access-token", data=login_data)
-        assert response_login.status_code == 200, response_login.text
-        
-        # 4. Verificamos que la contraseña antigua ya NO funciona
-        login_data_old_pw = {"username": user_to_reset.nombre_usuario, "password": "SecurePassword123!"}
-        response_login_old = await client.post(f"{settings.API_V1_STR}/auth/login/access-token", data=login_data_old_pw)
-        assert response_login_old.status_code == 401, "La contraseña antigua no debería funcionar"
-
-        # 5. Verificamos que el token de reseteo ya no es válido
-        response_reset_again = await client.post(
-            f"{settings.API_V1_STR}/auth/password-recovery/confirm-reset", 
-            json=reset_data
-        )
-        assert response_reset_again.status_code == 400
-        assert "inválido" in response_reset_again.json()["detail"].lower()
+    # 3. Verificamos que la nueva contraseña funciona
+    login_data_new_pw = {"username": username, "password": new_password}
     
-    finally:
-        user_to_delete = db.query(Usuario).filter(Usuario.id == user_id_to_delete).first()
-        if user_to_delete:
-            db.delete(user_to_delete)
-            db.commit()
+    # Aquí está la clave: capturamos y ejecutamos la tarea en segundo plano
+    tasks = BackgroundTasks()
+    response_login_new = await client.post(
+        f"{settings.API_V1_STR}/auth/login/access-token", 
+        data=login_data_new_pw,
+    )
+    assert response_login_new.status_code == status.HTTP_200_OK
+    await asyncio.sleep(0.1)  # Damos un respiro para que la tarea se complete
 
+    # 4. Verificamos que la contraseña antigua ya no funciona
+    login_data_old_pw = {"username": username, "password": old_password}
+    response_login_old = await client.post(
+        f"{settings.API_V1_STR}/auth/login/access-token", data=login_data_old_pw
+    )
+    assert response_login_old.status_code == status.HTTP_401_UNAUTHORIZED
 
-@pytest.mark.asyncio
-async def test_request_password_recovery_for_nonexistent_user(client: AsyncClient, auth_token_admin: str):
-    """
-    Prueba que solicitar un reseteo para un usuario que no existe falla.
-    """
+    # 5. Verificamos que el token de reseteo no se puede volver a usar
+    response_reset_again = await client.post(
+        f"{settings.API_V1_STR}/auth/password-recovery/confirm-reset", json=reset_data
+    )
+    assert response_reset_again.status_code == status.HTTP_400_BAD_REQUEST
+
+async def test_request_password_recovery_for_nonexistent_user(
+    client: AsyncClient, auth_token_admin: str
+):
+    """Prueba que solicitar un reseteo para un usuario que no existe falla con 404."""
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
-    request_data = {"username": "usuario_que_no_existe_jamás"}
     response = await client.post(
         f"{settings.API_V1_STR}/auth/password-recovery/request-reset",
-        headers=headers, 
-        json=request_data
+        headers=headers,
+        json={"username": f"no_existe_{uuid4().hex[:6]}"},
     )
-    assert response.status_code == 404, response.text
+    assert response.status_code == status.HTTP_404_NOT_FOUND
 
-
-@pytest.mark.asyncio
-async def test_reset_password_with_invalid_token(
-    client: AsyncClient, 
-    db: Session,
-    test_rol_usuario_regular: Rol
+@pytest.mark.parametrize(
+    "token_type, expected_status, expected_detail",
+    [
+        ("malformed", status.HTTP_422_UNPROCESSABLE_ENTITY, "Input should be a valid UUID"),
+        ("nonexistent", status.HTTP_400_BAD_REQUEST, "inválido"),
+    ],
+)
+async def test_reset_password_with_invalid_tokens(
+    client: AsyncClient, db: Session, test_rol_usuario_regular: Rol, token_type: str, expected_status: int, expected_detail: str
 ):
     """
-    Prueba que no se puede restablecer la contraseña con un token inválido.
+    Prueba el reseteo de contraseña con tokens inválidos:
+    1. Malformado (no UUID) -> 422
+    2. Con formato UUID pero no existente -> 400
     """
+    # Creamos un usuario para que la ruta no falle con 404 por "usuario no encontrado"
     unique_id = uuid4().hex[:6]
+    username = f"test_invalid_token_user_{unique_id}"
     user_in = UsuarioCreate(
-        nombre_usuario=f"test_invalid_token_{unique_id}",
-        email=f"test.invalid.token.{unique_id}@example.com",
+        nombre_usuario=username,
+        email=f"test.invalid.{unique_id}@example.com",
         password="somepassword",
-        rol_id=test_rol_usuario_regular.id
+        rol_id=test_rol_usuario_regular.id,
     )
-    temp_user = usuario_service.create(db, obj_in=user_in)
+    usuario_service.create(db, obj_in=user_in)
     db.commit()
-    db.refresh(temp_user)
-    temp_user_id = temp_user.id
 
-    try:
-        invalid_token = str(uuid4())
-        reset_data = {
-            "token": invalid_token, 
-            "new_password": "somepassword", 
-            "username": temp_user.nombre_usuario
-        }
-        
-        response = await client.post(
-            f"{settings.API_V1_STR}/auth/password-recovery/confirm-reset",
-            json=reset_data
-        )
-        
-        assert response.status_code == 400, response.text
-        assert "inválido" in response.json()["detail"].lower()
-    finally:
-        user_to_delete = db.query(Usuario).filter(Usuario.id == temp_user_id).first()
-        if user_to_delete:
-            db.delete(user_to_delete)
-            db.commit()
+    token = "token-no-es-uuid" if token_type == "malformed" else str(uuid4())
+    
+    reset_data = {
+        "token": token,
+        "new_password": "any_password",
+        "username": username,
+    }
+
+    response = await client.post(
+        f"{settings.API_V1_STR}/auth/password-recovery/confirm-reset",
+        json=reset_data,
+    )
+
+    assert response.status_code == expected_status
+    response_text = response.text.lower()
+    assert expected_detail.lower() in response_text

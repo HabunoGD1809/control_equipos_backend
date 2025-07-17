@@ -593,8 +593,6 @@ def upgrade() -> None:
     $$ LANGUAGE plpgsql;
     """)
 
-    # ---!!! CORRECCIÓN #1: EJECUTAR LA CREACIÓN DE PARTICIONES INICIALES !!!---
-    # Este es el paso clave que faltaba y que causaba el error en los tests.
     op.execute("SELECT control_equipos.gestionar_particiones_audit_log();")
 
     op.execute("""
@@ -1378,17 +1376,17 @@ def upgrade() -> None:
         {'nombre': 'Inspección de Seguridad', 'descripcion': 'Verificación de normas de seguridad', 'periodicidad_dias': 120, 'requiere_documentacion': True, 'es_preventivo': True}
     ])
 
-    # -- Proveedores --
-    proveedores_table = sa.table('proveedores',
-        sa.column('nombre', sa.String), sa.column('descripcion', sa.Text),
-        sa.column('contacto', sa.Text), sa.column('rnc', sa.Text)
-    )
-    op.bulk_insert(proveedores_table, [
-        {'nombre': 'Tech Solutions Inc.', 'descripcion': 'Equipos de cómputo y redes', 'contacto': 'ventas@techsolutions.com', 'rnc': '101000011'},
-        {'nombre': 'Industrial Supply Co.', 'descripcion': 'Maquinaria y herramientas industriales', 'contacto': 'contacto@industrialsupply.com', 'rnc': '101000022'},
-        {'nombre': 'MediCare Devices', 'descripcion': 'Equipamiento médico y de laboratorio', 'contacto': 'info@medicaredevices.com', 'rnc': '101000033'},
-        {'nombre': 'Office Pro', 'descripcion': 'Mobiliario y suministros de oficina', 'contacto': 'sales@officepro.net', 'rnc': '101000044'}
-    ])
+    # # -- Proveedores --
+    # proveedores_table = sa.table('proveedores',
+    #     sa.column('nombre', sa.String), sa.column('descripcion', sa.Text),
+    #     sa.column('contacto', sa.Text), sa.column('rnc', sa.Text)
+    # )
+    # op.bulk_insert(proveedores_table, [
+    #     {'nombre': 'Tech Solutions Inc.', 'descripcion': 'Equipos de cómputo y redes', 'contacto': 'ventas@techsolutions.com', 'rnc': '101000011'},
+    #     {'nombre': 'Industrial Supply Co.', 'descripcion': 'Maquinaria y herramientas industriales', 'contacto': 'contacto@industrialsupply.com', 'rnc': '101000022'},
+    #     {'nombre': 'MediCare Devices', 'descripcion': 'Equipamiento médico y de laboratorio', 'contacto': 'info@medicaredevices.com', 'rnc': '101000033'},
+    #     {'nombre': 'Office Pro', 'descripcion': 'Mobiliario y suministros de oficina', 'contacto': 'sales@officepro.net', 'rnc': '101000044'}
+    # ])
 
     # === PASO 6: LÓGICA FINAL (Restricciones complejas, Vistas) ===
     op.execute("""

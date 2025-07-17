@@ -1,14 +1,13 @@
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, List, Optional
 from uuid import UUID as PyUUID
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
-# --- CORRECCIÓN PARTE 1: Importar los modelos de SQLAlchemy aquí ---
-# Estos son los modelos correctos para usar con db.query()
+from app.core import permissions as perms
 from app.models.inventario_stock import InventarioStock
 from app.models.inventario_movimiento import InventarioMovimiento
 from app.models.usuario import Usuario as UsuarioModel
@@ -22,11 +21,9 @@ except ImportError:
 
 
 from app.api import deps
-# --- CORRECCIÓN PARTE 2: Añadir alias a los schemas para evitar conflictos ---
 from app.schemas.tipo_item_inventario import (
     TipoItemInventario, TipoItemInventarioCreate, TipoItemInventarioUpdate, TipoItemInventarioConStock
 )
-# Se añade "as InventarioStockSchema" y "as InventarioMovimientoSchema"
 from app.schemas.inventario_stock import InventarioStock as InventarioStockSchema, InventarioStockUpdate, InventarioStockTotal
 from app.schemas.inventario_movimiento import InventarioMovimiento as InventarioMovimientoSchema, InventarioMovimientoCreate
 from app.schemas.common import Msg
@@ -34,10 +31,6 @@ from app.services.tipo_item_inventario import tipo_item_inventario_service
 from app.services.inventario_stock import inventario_stock_service
 from app.services.inventario_movimiento import inventario_movimiento_service
 from app.schemas.enums import TipoMovimientoInvEnum
-
-PERM_ADMIN_TIPOS_INV = "administrar_inventario_tipos"
-PERM_ADMIN_STOCK_INV = "administrar_inventario_stock"
-PERM_VER_INV = "ver_inventario"
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -48,7 +41,7 @@ router = APIRouter()
 @router.post("/tipos/",
              response_model=TipoItemInventario,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_TIPOS_INV]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_INVENTARIO_TIPOS]))],
              summary="Crear Tipo de Item de Inventario",
              )
 def create_tipo_item_inventario(
@@ -84,7 +77,7 @@ def create_tipo_item_inventario(
 
 @router.get("/tipos/",
             response_model=List[TipoItemInventario],
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_INVENTARIO]))],
             summary="Listar Tipos de Item de Inventario",
             )
 def read_tipos_item_inventario(
@@ -98,7 +91,7 @@ def read_tipos_item_inventario(
 
 @router.get("/tipos/bajo-stock/",
             response_model=List[TipoItemInventarioConStock],
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV, PERM_ADMIN_STOCK_INV]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_INVENTARIO, perms.PERM_ADMINISTRAR_INVENTARIO_STOCK]))],
             summary="Listar Items con Bajo Stock",
             )
 def read_low_stock_items(
@@ -112,7 +105,7 @@ def read_low_stock_items(
 
 @router.get("/tipos/{tipo_id}",
             response_model=TipoItemInventario,
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_INVENTARIO]))],
             summary="Obtener Tipo de Item por ID",
             )
 def read_tipo_item_inventario_by_id(
@@ -125,7 +118,7 @@ def read_tipo_item_inventario_by_id(
 
 @router.put("/tipos/{tipo_id}",
             response_model=TipoItemInventario,
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_TIPOS_INV]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_INVENTARIO_TIPOS]))],
             summary="Actualizar Tipo de Item",
             )
 def update_tipo_item_inventario(
@@ -162,7 +155,7 @@ def update_tipo_item_inventario(
 
 @router.delete("/tipos/{tipo_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_TIPOS_INV]))],
+               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_INVENTARIO_TIPOS]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar Tipo de Item",
                )
@@ -176,8 +169,6 @@ def delete_tipo_item_inventario(
     tipo_a_eliminar = tipo_item_inventario_service.get_or_404(db, id=tipo_id)
     nombre_tipo_log = tipo_a_eliminar.nombre
     
-    # --- CORRECCIÓN PARTE 3: Usar el modelo de SQLAlchemy en la consulta ---
-    # `InventarioStock` y `InventarioMovimiento` ahora se refieren a los modelos importados al inicio.
     stock_existente = db.query(InventarioStock).filter(InventarioStock.tipo_item_id == tipo_id).first()
     if stock_existente:
         logger.warning(f"Intento de eliminar tipo de item '{nombre_tipo_log}' que tiene stock asociado.")
@@ -203,7 +194,7 @@ def delete_tipo_item_inventario(
 # ==============================================================================
 @router.get("/stock/",
             response_model=List[InventarioStockSchema],
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_INVENTARIO]))],
             summary="Consultar Stock de Inventario",
             )
 def read_inventario_stock(
@@ -229,7 +220,7 @@ def read_inventario_stock(
 
 @router.get("/stock/item/{tipo_item_id}/total",
             response_model=InventarioStockTotal,
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_INVENTARIO]))],
             summary="Obtener Stock Total de un Item",
             )
 def read_total_stock_for_item(
@@ -245,7 +236,7 @@ def read_total_stock_for_item(
 
 @router.put("/stock/{stock_id}/details",
             response_model=InventarioStockSchema,
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_STOCK_INV]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_INVENTARIO_STOCK]))],
             summary="Actualizar Detalles Menores de un Registro de Stock",
             )
 def update_inventario_stock_details(
@@ -285,7 +276,7 @@ def update_inventario_stock_details(
 @router.post("/movimientos/",
              response_model=InventarioMovimientoSchema,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_STOCK_INV]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_INVENTARIO_STOCK]))],
              summary="Registrar un Movimiento de Inventario",
              )
 def create_inventario_movimiento(
@@ -296,19 +287,63 @@ def create_inventario_movimiento(
 ) -> Any:
     """
     Registra una nueva transacción de inventario.
-    Requiere el permiso: `administrar_inventario_stock`.
+    El trigger de la base de datos se encargará de actualizar el stock total.
     """
-    tipo_mov_valor = movimiento_in.tipo_movimiento.value if isinstance(movimiento_in.tipo_movimiento, TipoMovimientoInvEnum) else movimiento_in.tipo_movimiento
-    logger.info(f"Usuario '{current_user.nombre_usuario}' registrando movimiento de inventario tipo '{tipo_mov_valor}' para TipoItem ID {movimiento_in.tipo_item_id}.")
+    
+    # 1. Obtenemos el valor string del Enum para logging y validaciones
+    tipo_mov_valor = movimiento_in.tipo_movimiento.value
+    
+    logger.info(
+        f"Usuario '{current_user.nombre_usuario}' registrando movimiento de inventario "
+        f"tipo '{tipo_mov_valor}' para TipoItem ID {movimiento_in.tipo_item_id}."
+    )
+
+    # 2. Definimos qué tipos de movimiento son de salida
+    tipos_de_salida = [
+        TipoMovimientoInvEnum.SALIDA_USO,
+        TipoMovimientoInvEnum.SALIDA_DESCARTE,
+        TipoMovimientoInvEnum.AJUSTE_NEGATIVO,
+        TipoMovimientoInvEnum.TRANSFERENCIA_SALIDA,
+        TipoMovimientoInvEnum.DEVOLUCION_PROVEEDOR
+    ]
+
+    # 3. Verificamos el stock ANTES de intentar la operación si es una salida
+    if movimiento_in.tipo_movimiento in tipos_de_salida and movimiento_in.ubicacion_origen:
+        stock_origen = inventario_stock_service.get_stock_record(
+            db,
+            tipo_item_id=movimiento_in.tipo_item_id,
+            ubicacion=movimiento_in.ubicacion_origen,
+            lote=movimiento_in.lote_origen
+        )
+        
+        stock_disponible = stock_origen.cantidad_actual if stock_origen else 0
+        
+        if stock_disponible < movimiento_in.cantidad:
+            logger.warning(
+                f"Intento de registrar salida con stock insuficiente. "
+                f"Item: {movimiento_in.tipo_item_id}, Ubicación: {movimiento_in.ubicacion_origen}, "
+                f"Requerido: {movimiento_in.cantidad}, Disponible: {stock_disponible}"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Stock insuficiente en '{movimiento_in.ubicacion_origen}'. "
+                    f"Se requieren {movimiento_in.cantidad} unidades, pero solo hay {stock_disponible} disponibles."
+                ),
+            )
+
     try:
         movimiento = inventario_movimiento_service.create_movimiento(db=db, obj_in=movimiento_in, current_user=current_user)
         db.commit()
         db.refresh(movimiento)
-        db.refresh(movimiento, attribute_names=['tipo_item', 'usuario_registrador'])
+        
+        # Refrescar relaciones para que se muestren en la respuesta
+        if hasattr(movimiento, 'tipo_item'): db.refresh(movimiento, attribute_names=['tipo_item'])
+        if hasattr(movimiento, 'usuario_registrador'): db.refresh(movimiento, attribute_names=['usuario_registrador'])
         if movimiento.equipo_asociado_id: db.refresh(movimiento, attribute_names=['equipo_asociado'])
         if movimiento.mantenimiento_id: db.refresh(movimiento, attribute_names=['mantenimiento_asociado'])
-
-        logger.info(f"Movimiento de inventario ID {movimiento.id} ({movimiento.tipo_movimiento}) creado exitosamente por '{current_user.nombre_usuario}'.")
+        
+        logger.info(f"Movimiento de inventario ID {movimiento.id} ({tipo_mov_valor}) creado exitosamente por '{current_user.nombre_usuario}'.")
         return movimiento
     except HTTPException as http_exc:
         logger.warning(f"Error HTTP al crear movimiento de inventario: {http_exc.detail}")
@@ -325,7 +360,7 @@ def create_inventario_movimiento(
 
         if hasattr(e, 'orig') and e.orig:
             pg_error_detail = str(e.orig)
-            if PG_RaiseException and isinstance(e.orig, PG_RaiseException) and hasattr(e.orig, 'diag') and hasattr(e.orig.diag, 'message_primary'):
+            if PG_RaiseException and isinstance(e.orig, PG_RaiseException) and hasattr(e.orig.diag, 'message_primary'):
                 error_message_from_db = e.orig.diag.message_primary
             else:
                 error_message_from_db = pg_error_detail
@@ -345,7 +380,7 @@ def create_inventario_movimiento(
 
 @router.get("/movimientos/",
             response_model=List[InventarioMovimientoSchema],
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_INVENTARIO]))],
             summary="Listar Movimientos de Inventario",
             )
 def read_inventario_movimientos(
@@ -382,7 +417,7 @@ def read_inventario_movimientos(
 
 @router.get("/movimientos/{movimiento_id}",
             response_model=InventarioMovimientoSchema,
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_INV]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_INVENTARIO]))],
             summary="Obtener Movimiento de Inventario por ID",
             )
 def read_inventario_movimiento_by_id(

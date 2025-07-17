@@ -1,12 +1,12 @@
 import logging
 from datetime import timedelta
-from typing import Any, Optional
+from typing import Any, Optional, Callable
 from uuid import UUID as PyUUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 from app.api import deps
 from app.core import security
@@ -36,11 +36,14 @@ def log_login_attempt_task(
 ):
     """
     Tarea de fondo para registrar un intento de login.
-    Crea y cierra su propia sesión de base de datos.
+    Crea y cierra su propia sesión de base de datos para operar de forma independiente.
+    Esta función está diseñada para ser resiliente y no fallar si el usuario
+    es eliminado antes de que el log se escriba.
     """
     db: Optional[Session] = None
     try:
         db = SessionLocal()
+        
         login_log_service.log_attempt(
             db=db,
             username_attempt=username_attempt,
@@ -50,14 +53,33 @@ def log_login_attempt_task(
             fail_reason=fail_reason,
             user_id=user_id
         )
+        
         db.commit()
         logger.info(f"Intento de login (UsuarioIntento: '{username_attempt}', Exito: {success}) registrado en background.")
+
+    # Capturamos específicamente el error de integridad (ForeignKeyViolation).
+    # Esto sucede en las pruebas si el usuario es eliminado antes de que esta tarea se complete.
+    # Al capturarlo, evitamos que el error se propague y registramos una advertencia en su lugar.
+    except IntegrityError as e:
+        logger.warning(
+            f"No se pudo registrar el intento de login para '{username_attempt}'. "
+            f"El usuario asociado (ID: {user_id}) probablemente fue eliminado antes de que el log pudiera ser escrito. "
+            f"Este es un comportamiento esperado en tests y no es un error crítico. Error original: {e}"
+        )
+        if db:
+            db.rollback()
+    
+    # Capturamos otros errores de base de datos de forma general.
     except SQLAlchemyError as e_sql:
         logger.error(f"ERROR de SQLAlchemy en tarea de fondo log_login_attempt_task: {e_sql}", exc_info=True)
         if db:
             db.rollback()
+    
+    # Capturamos cualquier otra excepción inesperada.
     except Exception as e_gen:
         logger.error(f"ERROR general en tarea de fondo log_login_attempt_task: {e_gen}", exc_info=True)
+        if db:
+            db.rollback()
     finally:
         if db:
             db.close()

@@ -42,49 +42,46 @@ def create_movimiento(
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
     """
-    Registra un nuevo movimiento de equipo utilizando la función de base de datos
-    `control_equipos.registrar_movimiento_equipo`.
-    Esta función maneja la lógica de negocio, actualiza el estado/ubicación del equipo
-    y crea el registro de movimiento.
-    Requiere el permiso: `registrar_movimientos`.
+    Registra un nuevo movimiento de equipo.
     """
-    logger.info(f"Usuario '{current_user.nombre_usuario}' intentando registrar movimiento tipo '{movimiento_in.tipo_movimiento}' para equipo ID '{movimiento_in.equipo_id}'.")
+    logger.info(f"Usuario '{current_user.nombre_usuario}' intentando registrar movimiento...")
     
-    autorizado_por_id_param = getattr(movimiento_in, 'autorizado_por_id', None)
-
     try:
         movimiento = movimiento_service.create_movimiento_via_db_func(
             db=db,
             obj_in=movimiento_in,
             registrado_por_usuario=current_user,
-            autorizado_por_id=autorizado_por_id_param
+            autorizado_por_id=getattr(movimiento_in, 'autorizado_por_id', None)
         )
         db.commit()
         db.refresh(movimiento, attribute_names=['equipo', 'usuario_registrador', 'usuario_autorizador'])
-        logger.info(f"Movimiento ID {movimiento.id} ({movimiento.tipo_movimiento}) registrado exitosamente por '{current_user.nombre_usuario}'.")
+        logger.info(f"Movimiento ID {movimiento.id} registrado exitosamente.")
         return movimiento
+        
     except HTTPException as http_exc:
-        db.rollback()  # ¡Importante!
+        # Si ya es un error HTTP conocido, solo haz rollback y relanza.
+        db.rollback()
         logger.warning(f"Error HTTP al registrar movimiento: {http_exc.status_code} - {http_exc.detail}")
         raise http_exc
-    except IntegrityError as e: # Esto puede capturar el constraint de PostgreSQL
+
+    except SQLAlchemyDBAPIError as e:
+        # Captura errores a nivel de base de datos de forma segura.
         db.rollback()
-        # Si la base de datos devuelve un error de constraint específico, se puede manejar aquí.
-        # Por ejemplo, la función PL/pgSQL puede lanzar una excepción con un SQLSTATE específico.
-        if isinstance(e.orig, RaiseException):
-            # Analiza el mensaje de error de la base de datos
-            error_message = str(e.orig)
-            if "no permite movimientos" in error_message:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error_message)
-            else:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=error_message)
-        else:
-            logger.error(f"Error de integridad no manejado al registrar movimiento: {e}", exc_info=True)
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al registrar el movimiento.")
+        # Si es una excepción controlada desde una función de la BD (PL/pgSQL)
+        if psycopg_errors and isinstance(e.orig, psycopg_errors.RaiseException):
+            error_message = str(e.orig).split('CONTEXT:')[0].strip()
+            logger.warning(f"Error de lógica de negocio desde BD: {error_message}")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=error_message)
+        
+        # Para otros errores de DB (que no sean excepciones de lógica de negocio)
+        logger.error(f"Error de base de datos no manejado: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al procesar la solicitud.")
+
     except Exception as e:
+        # Catch-all para cualquier otra excepción no prevista.
         db.rollback()
         logger.error(f"Error inesperado registrando movimiento: {e}", exc_info=True)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al registrar el movimiento.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor.")
 
 
 @router.get("/",

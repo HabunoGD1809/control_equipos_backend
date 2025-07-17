@@ -39,25 +39,32 @@ def create_reserva(
     logger.info(f"Usuario '{current_user.nombre_usuario}' creando reserva para Equipo ID {reserva_in.equipo_id}")
 
     try:
+        # La lógica de negocio está en el servicio, que puede lanzar HTTPException
         reserva = reserva_equipo_service.create_with_user(db=db, obj_in=reserva_in, current_user=current_user)
-        db.commit() # Intenta confirmar la transacción
+        db.commit()
         db.refresh(reserva, attribute_names=['equipo', 'solicitante', 'aprobado_por'])
         return reserva
+    except HTTPException as e:
+        # Si ya es una HTTPException (error de validación, etc.),
+        # simplemente haz rollback y relánzala.
+        db.rollback()
+        raise e
     except IntegrityError as e:
         db.rollback()
-        # Comprueba si el error es por la restricción de exclusión
+        # Maneja específicamente los conflictos de solapamiento de reservas
         if isinstance(e.orig, ExclusionViolation):
             logger.warning(f"Conflicto de reserva detectado para equipo {reserva_in.equipo_id}.")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Conflicto de reserva: El equipo ya está reservado en el horario solicitado.",
             )
-        # Si no, relanza la excepción para que el manejador de errores general la capture
-        raise e
+        # Otros errores de integridad
+        logger.error(f"Error de Integridad no manejado al crear reserva: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Error de integridad en los datos: {e.orig}")
     except Exception as e:
+        # Captura cualquier otra excepción inesperada
         db.rollback()
         logger.error(f"Error inesperado al crear reserva para equipo {reserva_in.equipo_id}: {e}", exc_info=True)
-        # Esto será capturado por el manejador de errores genérico
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor al procesar la solicitud."

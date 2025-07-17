@@ -76,14 +76,12 @@ async def test_create_reserva_solapamiento(
     assert "conflicto de reserva" in response2.json()["detail"].lower()
 
 async def test_create_reserva_fecha_fin_antes_inicio(
-    # CORREGIDO: Usar la fixture correcta
     client: AsyncClient, auth_token_usuario_regular: str, test_equipo_reservable: Equipo
 ):
     """
     Test mejorado: Ahora comprueba que la API devuelve un error HTTP 422,
     que es el comportamiento real definido en el servicio, en lugar de un ValueError local.
     """
-    # CORREGIDO: Usar la fixture correcta
     headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     start_time = datetime.now(timezone.utc) + timedelta(days=3)
     end_time = start_time - timedelta(hours=1)

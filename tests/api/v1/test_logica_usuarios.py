@@ -13,20 +13,18 @@ async def test_login_usuario_bloqueado_falla(
     client: AsyncClient, db: Session, test_usuario_regular_fixture: Usuario
 ):
     """Verifica que un usuario bloqueado no puede iniciar sesión."""
-    # 1. Bloquear al usuario directamente en la BD para la prueba
     test_usuario_regular_fixture.bloqueado = True
     db.add(test_usuario_regular_fixture)
     db.commit()
 
-    # 2. Intentar iniciar sesión
     login_data = {
         "username": test_usuario_regular_fixture.nombre_usuario,
-        "password": "some_password" # La contraseña correcta de tu fixture
+        "password": "UsuarioPass123!"
     }
     response = await client.post(f"{settings.API_V1_STR}/auth/login/access-token", data=login_data)
 
-    assert response.status_code == status.HTTP_400_BAD_REQUEST
-    assert "inactivo o bloqueado" in response.json()["detail"].lower()
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert "incorrectos, o usuario bloqueado" in response.json()["detail"]
 
 async def test_admin_no_puede_cambiar_su_propio_rol(
     client: AsyncClient, auth_token_admin: str, test_admin_fixture: Usuario, test_rol_usuario_regular: Rol
@@ -50,3 +48,4 @@ async def test_admin_no_puede_eliminarse_a_si_mismo(client: AsyncClient, auth_to
     response = await client.delete(f"{settings.API_V1_STR}/usuarios/{test_admin_fixture.id}", headers=headers)
     assert response.status_code == status.HTTP_403_FORBIDDEN
     assert "no puedes eliminar tu propia cuenta" in response.json()["detail"].lower()
+

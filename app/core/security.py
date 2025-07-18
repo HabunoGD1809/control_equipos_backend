@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Union, Optional, Set
+from typing import Any, Union, Optional, Set, List
 
 from jose import jwt, JWTError
 from pydantic import ValidationError
@@ -70,7 +70,7 @@ def decode_refresh_token(token: str) -> Optional[TokenPayload]:
         return None
 
 
-def user_has_permissions(user: Usuario, required_permissions: Set[str]) -> bool:
+def user_has_permissions(user: Usuario, required_permissions: Union[List[str], Set[str]]) -> bool:
     """
     Verifica si un usuario tiene AL MENOS UNO de los permisos requeridos.
     """
@@ -80,6 +80,8 @@ def user_has_permissions(user: Usuario, required_permissions: Set[str]) -> bool:
     
     user_permissions = {p.nombre for p in user.rol.permisos}
     
+    # Se convierte la entrada a un set para que .isdisjoint() siempre funcione.
+    required_set = set(required_permissions)
+    
     # Devuelve True si hay al menos un permiso en común
-    return not required_permissions.isdisjoint(user_permissions)
-
+    return not required_set.isdisjoint(user_permissions)

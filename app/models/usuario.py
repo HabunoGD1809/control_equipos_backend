@@ -3,10 +3,15 @@ import uuid
 from typing import TYPE_CHECKING, List, Optional
 
 from sqlalchemy import (
-    DateTime, ForeignKey, Integer, Boolean, String
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import relationship, Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
 from app.db.base import Base
@@ -20,6 +25,7 @@ if TYPE_CHECKING:
     from .asignacion_licencia import AsignacionLicencia
     from .reserva_equipo import ReservaEquipo
     from .inventario_movimiento import InventarioMovimiento
+    from .refresh_token import RefreshToken
 
 
 class Usuario(Base):
@@ -45,6 +51,12 @@ class Usuario(Base):
     requiere_cambio_contrasena: Mapped[bool] = mapped_column(Boolean, default=True)
 
     rol: Mapped["Rol"] = relationship("Rol", back_populates="usuarios", lazy="selectin")
+
+    refresh_tokens: Mapped[List["RefreshToken"]] = relationship(
+        "RefreshToken",
+        back_populates="usuario",
+        cascade="all, delete-orphan"
+    )
 
     movimientos_registrados: Mapped[List["Movimiento"]] = relationship(
         "Movimiento",

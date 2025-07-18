@@ -17,8 +17,10 @@ class Settings(BaseSettings):
     SECRET_KEY: str = str(os.getenv("SECRET_KEY"))
     ALGORITHM: str = os.getenv("ALGORITHM", "HS256")
     
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "1440"))  # 1 día por defecto
-
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+    REFRESH_TOKEN_SECRET_KEY: str = str(os.getenv("REFRESH_TOKEN_SECRET_KEY"))
+    REFRESH_TOKEN_EXPIRE_MINUTES: int = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES", 60 * 24 * 7))
+    
     # --- Configuración de Base de Datos ---
     POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER", "localhost")
     POSTGRES_PORT: str = os.getenv("POSTGRES_PORT", "5433")
@@ -33,10 +35,9 @@ class Settings(BaseSettings):
     @field_validator("DATABASE_URI", mode='before')
     @classmethod
     def assemble_db_connection(cls, v: Optional[str], info: ValidationInfo) -> Any:
-        if isinstance(v, str):  # Si ya se proporciona la URL completa, usarla
+        if isinstance(v, str):
             return v
         
-        # Construir desde partes si no se dio la URL completa
         driver = info.data.get("DATABASE_DRIVER", "psycopg")
         scheme = f"postgresql+{driver}"
 
@@ -56,13 +57,11 @@ class Settings(BaseSettings):
     @classmethod
     def assemble_cors_origins(cls, v: Union[str, List[str]]) -> List[str]:
         if isinstance(v, str) and v:
-            # Intentar parsear como JSON si tiene formato de lista
             if v.startswith("[") and v.endswith("]"):
                 try:
                     return json.loads(v)
                 except json.JSONDecodeError:
                     pass
-            # Si no es JSON válido, tratar como lista separada por comas
             return [origin.strip() for origin in v.split(",") if origin.strip()]
         elif isinstance(v, list):
             return v
@@ -91,10 +90,9 @@ class Settings(BaseSettings):
     SUPERUSER_EMAIL: str = str(os.getenv("SUPERUSER_EMAIL"))
     SUPERUSER_PASSWORD: str = str(os.getenv("SUPERUSER_PASSWORD"))
     
-    model_config = {
-        "case_sensitive": True,
-        "env_file": ".env",
-        "env_file_encoding": "utf-8",
-    }
+    class Config:
+        case_sensitive = True
+        env_file = ".env"
+        env_file_encoding = 'utf-8'
 
 settings = Settings()

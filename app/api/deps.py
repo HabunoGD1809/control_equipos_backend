@@ -12,6 +12,7 @@ from app import models
 from app.core.config import settings
 from app.core import permissions as perms
 from app.core.security import user_has_permissions
+from app.core import security
 from app.db.session import SessionLocal
 
 from app.models.usuario import Usuario
@@ -46,13 +47,10 @@ def get_current_user(
         detail="No se pudieron validar las credenciales",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    try:
-        payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
-        token_data = TokenPayload(**payload)
-    except (JWTError, ValidationError) as e:
-        logger.warning(f"Error de validación/JWT en token: {e}", exc_info=True)
+    token_data = security.decode_access_token(token)
+    
+    if not token_data or not token_data.sub:
+        logger.warning(f"Error de validación/JWT en token.", exc_info=True)
         raise credentials_exception
 
     user = db.get(

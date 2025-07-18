@@ -1,6 +1,6 @@
 import logging
-from datetime import timedelta
-from typing import Any, Optional, Callable
+from datetime import datetime, timezone
+from typing import Any, Optional
 from uuid import UUID as PyUUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
@@ -10,17 +10,18 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 from app.api import deps
 from app.core import security
-from app.core.config import settings
+from app.core.password import verify_password
 from app.db.session import SessionLocal
 from app.models.usuario import Usuario as UsuarioModel
 from app.schemas.common import Msg
-from app.schemas.token import Token
+from app.schemas.token import Token, RefreshToken as RefreshTokenSchema, RefreshTokenCreate
 from app.schemas.usuario import Usuario as UsuarioSchema
 from app.schemas.password import (
     PasswordResetRequest, PasswordResetResponse, PasswordResetConfirm
 )
 from app.services.usuario import usuario_service
 from app.services.login_log import login_log_service
+from app.services.refresh_token import refresh_token_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -37,8 +38,6 @@ def log_login_attempt_task(
     """
     Tarea de fondo para registrar un intento de login.
     Crea y cierra su propia sesión de base de datos para operar de forma independiente.
-    Esta función está diseñada para ser resiliente y no fallar si el usuario
-    es eliminado antes de que el log se escriba.
     """
     db: Optional[Session] = None
     try:
@@ -57,25 +56,19 @@ def log_login_attempt_task(
         db.commit()
         logger.info(f"Intento de login (UsuarioIntento: '{username_attempt}', Exito: {success}) registrado en background.")
 
-    # Capturamos específicamente el error de integridad (ForeignKeyViolation).
-    # Esto sucede en las pruebas si el usuario es eliminado antes de que esta tarea se complete.
-    # Al capturarlo, evitamos que el error se propague y registramos una advertencia en su lugar.
     except IntegrityError as e:
         logger.warning(
             f"No se pudo registrar el intento de login para '{username_attempt}'. "
-            f"El usuario asociado (ID: {user_id}) probablemente fue eliminado antes de que el log pudiera ser escrito. "
-            f"Este es un comportamiento esperado en tests y no es un error crítico. Error original: {e}"
+            f"El usuario asociado (ID: {user_id}) probablemente fue eliminado. Error: {e}"
         )
         if db:
             db.rollback()
     
-    # Capturamos otros errores de base de datos de forma general.
     except SQLAlchemyError as e_sql:
         logger.error(f"ERROR de SQLAlchemy en tarea de fondo log_login_attempt_task: {e_sql}", exc_info=True)
         if db:
             db.rollback()
     
-    # Capturamos cualquier otra excepción inesperada.
     except Exception as e_gen:
         logger.error(f"ERROR general en tarea de fondo log_login_attempt_task: {e_gen}", exc_info=True)
         if db:
@@ -93,74 +86,125 @@ def login_access_token(
     form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
     """
-    Endpoint de login estándar OAuth2.
+    Endpoint de login. Crea una nueva sesión y devuelve tokens.
     """
     ip_address = request.client.host if request.client else "N/A"
     user_agent = request.headers.get("user-agent", "N/A")
     username_attempt = form_data.username
-
     logger.info(f"Intento de login para usuario '{username_attempt}' desde IP {ip_address}")
 
     user = usuario_service.authenticate(
         db, username=username_attempt, password=form_data.password
     )
 
-    if not user:
-        logger.warning(f"Login fallido (credenciales/usuario no encontrado) para '{username_attempt}'.")
+    if not user or not usuario_service.is_active(user):
+        fail_reason = "Usuario inactivo o bloqueado" if user else "Credenciales incorrectas"
+        user_id = user.id if user else None
         background_tasks.add_task(
             log_login_attempt_task,
-            username_attempt=username_attempt,
-            success=False,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            fail_reason="Credenciales incorrectas o usuario no encontrado",
-            user_id=None
+            username_attempt=username_attempt, success=False, ip_address=ip_address,
+            user_agent=user_agent, fail_reason=fail_reason, user_id=user_id
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nombre de usuario o contraseña incorrectos.",
+            detail="Nombre de usuario o contraseña incorrectos, o usuario bloqueado.",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
-    if not usuario_service.is_active(user):
-        logger.warning(f"Login fallido (usuario inactivo/bloqueado) para '{username_attempt}'.")
-        background_tasks.add_task(
-            log_login_attempt_task,
-            username_attempt=username_attempt,
-            success=False,
-            ip_address=ip_address,
-            user_agent=user_agent,
-            fail_reason="Usuario inactivo o bloqueado",
-            user_id=user.id
-        )
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Usuario inactivo o bloqueado.")
 
     logger.info(f"Login exitoso para usuario '{username_attempt}'.")
 
     try:
+        access_token = security.create_access_token(subject=user.id)
+        refresh_token_str = security.create_refresh_token(subject=user.id)
+
+        token_create_schema = RefreshTokenCreate(token=refresh_token_str, usuario_id=user.id)
+        
+        refresh_token_service.create_token(
+            db, obj_in=token_create_schema, user_agent=user_agent, ip_address=ip_address
+        )
+
         usuario_service.handle_successful_login(db, user=user)
         db.commit()
-        db.refresh(user)
     except Exception as e:
-        logger.error(f"Error al guardar datos de login exitoso para {user.nombre_usuario}: {e}")
         db.rollback()
-
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = security.create_access_token(
-        subject=str(user.id), expires_delta=access_token_expires
-    )
-
+        logger.error(f"Error crítico al crear sesión para {user.nombre_usuario}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor al procesar el login.")
+    
     background_tasks.add_task(
         log_login_attempt_task,
-        username_attempt=username_attempt,
-        success=True,
-        ip_address=ip_address,
-        user_agent=user_agent,
-        fail_reason=None,
-        user_id=user.id
+        username_attempt=username_attempt, success=True,
+        ip_address=ip_address, user_agent=user_agent, user_id=user.id
     )
     
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token_str,
+        "token_type": "bearer"
+    }
+
+
+@router.post("/refresh-token", response_model=Token, summary="Refresca un Access Token")
+def refresh_access_token(
+    request: Request,
+    token_data: RefreshTokenSchema,
+    db: Session = Depends(deps.get_db),
+):
+    """
+    Obtiene un nuevo par de tokens a partir de un refresh token válido,
+    implementando la rotación de tokens para mayor seguridad.
+    """
+    refresh_token_str = token_data.refresh_token
+    payload = security.decode_refresh_token(refresh_token_str)
+
+    if not payload or not payload.sub:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token de refresco inválido o expirado")
+    
+    user = usuario_service.get(db, id=payload.sub)
+
+    if not user or not usuario_service.is_active(user):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuario no encontrado o inactivo")
+
+    # Buscar el token de refresco válido en la base de datos
+    valid_token_found = None
+    for db_token in user.refresh_tokens:
+        if (
+            db_token.revoked_at is None and
+            db_token.expires_at > datetime.now(timezone.utc) and
+            verify_password(refresh_token_str, db_token.token_hash)
+        ):
+            valid_token_found = db_token
+            break
+    
+    if not valid_token_found:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token de refresco no es válido o ha sido revocado.")
+
+    try:
+        # Revocar el token viejo
+        refresh_token_service.revoke_token(db, token_obj=valid_token_found)
+        
+        # Crear un nuevo par de tokens
+        new_access_token = security.create_access_token(subject=user.id)
+        new_refresh_token_str = security.create_refresh_token(subject=user.id)
+
+        # Crear el nuevo registro de sesión con la info del request actual
+        ip_address = request.client.host if request.client else "N/A"
+        user_agent = request.headers.get("user-agent", "N/A")
+        new_token_create = RefreshTokenCreate(token=new_refresh_token_str, usuario_id=user.id)
+        refresh_token_service.create_token(
+            db, obj_in=new_token_create, user_agent=user_agent, ip_address=ip_address
+        )
+        
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error crítico al rotar el refresh token para {user.nombre_usuario}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Error interno del servidor al refrescar el token.")
+
+    return {
+        "access_token": new_access_token,
+        "refresh_token": new_refresh_token_str,
+        "token_type": "bearer",
+    }
 
 
 @router.post("/login/test-token", response_model=UsuarioSchema)
@@ -172,7 +216,6 @@ def test_token(current_user: UsuarioModel = Depends(deps.get_current_active_user
     return current_user
 
 # --- Rutas de Reseteo de Contraseña ---
-
 @router.post(
     "/password-recovery/request-reset",
     response_model=PasswordResetResponse,

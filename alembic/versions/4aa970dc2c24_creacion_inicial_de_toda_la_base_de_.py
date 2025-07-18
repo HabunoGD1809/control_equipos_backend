@@ -421,6 +421,22 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_control_equipos_notificaciones_created_at'), 'notificaciones', ['created_at'], unique=False, schema='control_equipos')
     op.create_index('idx_notificaciones_usuario_id_leido_urgencia', 'notificaciones', ['usuario_id', 'leido', 'urgencia', 'created_at'], unique=False, schema='control_equipos')
+    # NUEVA TABLA
+    op.create_table('refresh_tokens',
+        sa.Column('id', sa.UUID(), server_default=sa.text('gen_random_uuid()'), nullable=False),
+        sa.Column('usuario_id', sa.UUID(), nullable=False),
+        sa.Column('token_hash', sa.String(length=256), nullable=False),
+        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+        sa.Column('revoked_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('ip_address', sa.String(length=100), nullable=True),
+        sa.Column('user_agent', sa.Text(), nullable=True),
+        sa.ForeignKeyConstraint(['usuario_id'], ['control_equipos.usuarios.id'], name=op.f('fk_refresh_tokens_usuario_id_usuarios'), ondelete='CASCADE'),
+        sa.PrimaryKeyConstraint('id', name=op.f('pk_refresh_tokens')),
+        sa.UniqueConstraint('token_hash', name=op.f('uq_refresh_tokens_token_hash')),
+        schema='control_equipos'
+    )
+    op.create_index(op.f('ix_control_equipos_refresh_tokens_usuario_id'), 'refresh_tokens', ['usuario_id'], unique=False, schema='control_equipos')
     op.create_table('reservas_equipo',
         sa.Column('id', sa.UUID(), server_default=sa.text('gen_random_uuid()'), nullable=False),
         sa.Column('equipo_id', sa.UUID(), nullable=False),

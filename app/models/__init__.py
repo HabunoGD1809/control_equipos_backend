@@ -24,6 +24,7 @@ from .tipo_documento import TipoDocumento
 from .tipo_item_inventario import TipoItemInventario
 from .tipo_mantenimiento import TipoMantenimiento
 from .usuario import Usuario
+from .refresh_token import RefreshToken
 
 
 __all__ = [
@@ -52,4 +53,5 @@ __all__ = [
     "TipoItemInventario",
     "TipoMantenimiento",
     "Usuario",
+    "RefreshToken",
 ]

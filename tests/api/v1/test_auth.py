@@ -41,20 +41,6 @@ async def test_login_user_not_found(mock_log_attempt, client: AsyncClient):
     assert "detail" in response.json()
     assert response.json()["detail"] == "Nombre de usuario o contraseña incorrectos, o usuario bloqueado."
 
-async def test_test_token_success(client: AsyncClient, auth_token_usuario_regular: str):
-    headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
-    response = await client.post(f"{settings.API_V1_STR}/auth/login/test-token", headers=headers)
-    assert response.status_code == 200
-
-async def test_test_token_invalid(client: AsyncClient):
-    headers = {"Authorization": "Bearer invalidtoken"}
-    response = await client.post(f"{settings.API_V1_STR}/auth/login/test-token", headers=headers)
-    assert response.status_code == 401
-
-async def test_test_token_no_token(client: AsyncClient):
-    response = await client.post(f"{settings.API_V1_STR}/auth/login/test-token")
-    assert response.status_code == 401
-
 class TestRefreshTokenFlow:
     """
     Grupo de tests para la nueva funcionalidad de refresh token.

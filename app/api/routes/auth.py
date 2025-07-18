@@ -15,7 +15,6 @@ from app.db.session import SessionLocal
 from app.models.usuario import Usuario as UsuarioModel
 from app.schemas.common import Msg
 from app.schemas.token import Token, RefreshToken as RefreshTokenSchema, RefreshTokenCreate
-from app.schemas.usuario import Usuario as UsuarioSchema
 from app.schemas.password import (
     PasswordResetRequest, PasswordResetResponse, PasswordResetConfirm
 )
@@ -206,14 +205,6 @@ def refresh_access_token(
         "token_type": "bearer",
     }
 
-
-@router.post("/login/test-token", response_model=UsuarioSchema)
-def test_token(current_user: UsuarioModel = Depends(deps.get_current_active_user)) -> Any:
-    """
-    Endpoint para probar si un access token es válido.
-    """
-    logger.debug(f"Token válido para usuario: {current_user.nombre_usuario} (ID: {current_user.id})")
-    return current_user
 
 # --- Rutas de Reseteo de Contraseña ---
 @router.post(

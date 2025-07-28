@@ -1,5 +1,4 @@
 import sys
-import os 
 from os.path import abspath, dirname
 
 root_dir = dirname(dirname(abspath(__file__)))
@@ -12,11 +11,11 @@ from app.services.rol import rol_service
 from app.schemas.usuario import UsuarioCreate
 from app.schemas.rol import RolCreate
 from app.core.config import settings
-
+from app.core.permissions import ADMIN_ROLE_NAME
 
 def create_superuser():
     """
-    Script síncrono para crear roles y un superusuario.
+    Script síncrono para crear el rol 'admin' y un superusuario a partir de variables de entorno.
     """
     db: Session = SessionLocal()
     
@@ -24,26 +23,26 @@ def create_superuser():
     
     try:
         # 1. Verificar o crear el rol de 'admin'
-        admin_role = rol_service.get_by_name(db, name="admin")
+        admin_role = rol_service.get_by_name(db, name=ADMIN_ROLE_NAME)
         if not admin_role:
-            print("Rol 'admin' no encontrado, creándolo...")
-            admin_role_schema = RolCreate(nombre="admin", descripcion="Rol de Administrador")
+            print(f"Rol '{ADMIN_ROLE_NAME}' no encontrado, creándolo...")
+            admin_role_schema = RolCreate(nombre=ADMIN_ROLE_NAME, descripcion="Rol de Administrador con todos los permisos")
             admin_role = rol_service.create(db, obj_in=admin_role_schema)
             db.commit()
             db.refresh(admin_role)
-            print(f"Rol 'admin' creado con ID: {admin_role.id}")
+            print(f"Rol '{ADMIN_ROLE_NAME}' creado con ID: {admin_role.id}")
         else:
-            print(f"Rol 'admin' ya existe con ID: {admin_role.id}")
+            print(f"Rol '{ADMIN_ROLE_NAME}' ya existe con ID: {admin_role.id}")
 
-        # --- CAMBIO #1: Leer email y pass desde variables de entorno ---
+        # 2. Leer credenciales desde variables de entorno
         admin_email = settings.SUPERUSER_EMAIL
         admin_password = settings.SUPERUSER_PASSWORD
 
-        if not admin_password:
-            print("!!! ERROR: La variable de entorno SUPERUSER_PASSWORD no está definida. Saliendo. !!!")
-            return # Salimos del script si no hay contraseña
+        if not all([admin_email, admin_password]):
+            print("!!! ERROR: Define SUPERUSER_EMAIL y SUPERUSER_PASSWORD en tu archivo .env. Saliendo. !!!")
+            return
 
-        # 2. Verificar si el superusuario ya existe
+        # 3. Verificar si el superusuario ya existe
         superuser = usuario_service.get_by_email(db, email=admin_email)
         
         if not superuser:
@@ -59,7 +58,7 @@ def create_superuser():
             db.commit()
             print("¡Superusuario creado exitosamente!")
         else:
-            print("El superusuario ya existe.")
+            print(f"El superusuario con email '{admin_email}' ya existe.")
 
     except Exception as e:
         print(f"Ocurrió un error: {e}")

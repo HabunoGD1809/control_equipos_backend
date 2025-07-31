@@ -16,7 +16,7 @@ from app.models.usuario import Usuario as UsuarioModel
 from app.schemas.common import Msg
 from app.schemas.token import Token, RefreshToken as RefreshTokenSchema, RefreshTokenCreate
 from app.schemas.password import (
-    PasswordResetRequest, PasswordResetResponse, PasswordResetConfirm
+    PasswordChange, PasswordResetRequest, PasswordResetResponse, PasswordResetConfirm
 )
 from app.services.usuario import usuario_service
 from app.services.login_log import login_log_service
@@ -204,6 +204,45 @@ def refresh_access_token(
         "refresh_token": new_refresh_token_str,
         "token_type": "bearer",
     }
+
+
+@router.post(
+    "/change-password",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Permite al usuario logueado cambiar su contraseña"
+)
+def change_password_logged_in(
+    *,
+    password_data: PasswordChange,
+    db: Session = Depends(deps.get_db),
+    current_user: UsuarioModel = Depends(deps.get_current_active_user)
+):
+    """
+    **Endpoint para usuarios autenticados.**
+
+    Permite al usuario que ha iniciado sesión cambiar su propia contraseña.
+    Debe proporcionar su contraseña actual y la nueva.
+    """
+    logger.info(f"Usuario '{current_user.nombre_usuario}' ha solicitado cambiar su contraseña.")
+    try:
+        usuario_service.change_password(db=db, user=current_user, password_data=password_data)
+        db.commit()
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(
+            f"Error al cambiar la contraseña para '{current_user.nombre_usuario}'. Error: {e}",
+            exc_info=True
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Ocurrió un error interno al cambiar la contraseña."
+        )
+    # Al retornar 204, no se debe enviar cuerpo de respuesta.
+    # FastAPI maneja esto automáticamente si la función retorna None.
+    return None
 
 
 # --- Rutas de Reseteo de Contraseña ---

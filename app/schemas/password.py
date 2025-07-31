@@ -27,3 +27,11 @@ class PasswordResetConfirm(BaseModel):
     username: str = Field(..., description="Tu nombre de usuario.")
     token: uuid.UUID = Field(..., description="El token de reseteo que te proporcionó el administrador.")
     new_password: str = Field(..., min_length=8, description="Tu nueva contraseña.")
+
+
+class PasswordChange(BaseModel):
+    """
+    Schema para el cambio de contraseña de un usuario autenticado.
+    """
+    current_password: str = Field(..., description="La contraseña actual del usuario.")
+    new_password: str = Field(..., min_length=8, description="La nueva contraseña para el usuario.")

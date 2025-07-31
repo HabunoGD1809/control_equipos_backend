@@ -11,6 +11,7 @@ from fastapi import HTTPException, status
 # from app.core.permissions import ADMIN_ROLE_NAME
 from app.models.usuario import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
+from app.schemas.password import PasswordChange
 
 # Importar la clase base y otros servicios si son necesarios
 from .base_service import BaseService
@@ -221,6 +222,34 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         # La convención es no devolver el objeto, ya que se eliminará.
         # Pero si se necesita para logs, se puede devolver.
         return db_obj
+
+    def change_password(
+        self, db: Session, *, user: Usuario, password_data: PasswordChange
+    ) -> Usuario:
+        """
+        Permite a un usuario autenticado cambiar su propia contraseña.
+        Verifica la contraseña actual antes de establecer una nueva.
+        NO realiza db.commit().
+        """
+        logger.info(f"Iniciando cambio de contraseña para el usuario: {user.nombre_usuario}")
+
+        # 1. Verificar la contraseña actual
+        if not verify_password(password_data.current_password, user.hashed_password):
+            logger.warning(f"Intento de cambio de contraseña fallido para '{user.nombre_usuario}': contraseña actual incorrecta.")
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="La contraseña actual es incorrecta.",
+            )
+
+        # 2. Hashear y actualizar la nueva contraseña
+        user.hashed_password = get_password_hash(password_data.new_password)
+        
+        # 3. Marcar que ya no se requiere cambio de contraseña
+        user.requiere_cambio_contrasena = False
+
+        db.add(user)
+        logger.info(f"Contraseña actualizada exitosamente para el usuario '{user.nombre_usuario}'.")
+        return user
 
     # --- Método para iniciar el reseteo de contraseña ---
     def initiate_password_reset(self, db: Session, *, username: str) -> Usuario:

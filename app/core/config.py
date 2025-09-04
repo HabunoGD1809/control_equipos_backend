@@ -53,6 +53,10 @@ class Settings(BaseSettings):
         elif isinstance(v, str):
             return json.loads(v)
         return v
+        
+    # --- Configuración de Celery ---
+    CELERY_BROKER_URL: str
+    CELERY_RESULT_BACKEND: str
 
     # --- Configuración de Almacenamiento ---
     UPLOADS_DIRECTORY: str = "./uploads"

@@ -1,19 +1,14 @@
-import logging.config # Importar logging config
+import logging.config 
 from celery import Celery
-
-# Importar configuración de la aplicación principal
+from celery.schedules import crontab 
 from app.core.config import settings
-# Importar configuración de logging para que el worker también loggee
 from app.core.logging_config import setup_logging
 
-# Configurar logging para el worker ANTES de definir tareas
 setup_logging()
 logger = logging.getLogger(__name__)
 logger.info("Configurando Celery worker...")
 
-# Crear instancia de Celery
-# El primer argumento es el nombre del módulo actual (importante para auto-descubrimiento)
-# 'broker' y 'backend' se leen de la configuración
+
 celery_app = Celery(
     "worker",
     broker=settings.CELERY_BROKER_URL,
@@ -24,16 +19,29 @@ celery_app = Celery(
 
 # Opcional: Configuración adicional de Celery
 celery_app.conf.update(
-    task_serializer="json", # Usar json para serializar argumentos de tareas
-    accept_content=["json"],  # Aceptar solo contenido json
-    result_serializer="json", # Usar json para resultados
-    timezone="UTC", # Usar UTC para horarios consistentes
+    task_serializer="json",
+    accept_content=["json"],
+    result_serializer="json",
+    timezone="UTC",
     enable_utc=True,
-    # Configuración de reintentos, colas, etc., podría ir aquí
+    # Configuración de reintentos, colas, etc., 
     # task_track_started=True, # Útil para monitoreo
 )
 
-logger.info(f"Celery worker configurado. Broker: {settings.CELERY_BROKER_URL}")
+celery_app.conf.beat_schedule = {
+    # Tarea para gestionar particiones de auditoría. Se ejecuta todos los días a las 2:00 AM.
+    'manage-audit-partitions-daily': {
+        'task': 'tasks.manage_audit_log_partitions', # El nombre
+        'schedule': crontab(hour=2, minute=0), # crontab(hour=2, minute=0) -> Ejecutar a las 2:00 AM
+    },
+    # Añadir otras tareas programadas que necesites en el futuro.
+    # Ejemplo: Refrescar vistas materializadas cada hora.
+    'refresh-materialized-views-hourly': {
+        'task': 'tasks.refresh_materialized_views',
+        'schedule': crontab(minute=0), # Se ejecuta al inicio de cada hora
+    }
+}
+# ------------------------------------
 
-# Para ejecutar el worker desde la línea de comandos (estando en el directorio raíz del proyecto):
-# celery -A app.worker worker --loglevel=info
+logger.info(f"Celery worker configurado. Broker: {settings.CELERY_BROKER_URL}")
+logger.info("Planificador (Celery Beat) configurado para las tareas periódicas.")

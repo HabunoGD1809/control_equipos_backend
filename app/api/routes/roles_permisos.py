@@ -14,21 +14,21 @@ from app.services.rol import rol_service
 from app.services.permiso import permiso_service
 from app.models.usuario import Usuario as UsuarioModel
 
+from app.core import permissions as perms
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Permisos (ajustar según los nombres exactos en la BD)
-PERM_ADMIN_ROLES = "administrar_roles"
-PERM_ADMIN_USUARIOS = "administrar_usuarios"
+# ==============================================================================
 
-# ==============================================================================
+# ==========================
 # Endpoints para ROLES
-# ==============================================================================
+# ==========================
 
 @router.post("/roles/",
              response_model=Rol,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_ROLES]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_ROLES]))],
              summary="Crear un nuevo Rol",
              response_description="El rol creado con sus permisos iniciales.")
 def create_rol(
@@ -69,7 +69,7 @@ def create_rol(
 
 @router.get("/roles/",
             response_model=List[Rol],
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_ROLES, PERM_ADMIN_USUARIOS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_ROLES, perms.PERM_ADMINISTRAR_USUARIOS]))],
             summary="Listar Roles",
             response_description="Una lista de todos los roles definidos.")
 def read_roles(
@@ -89,7 +89,7 @@ def read_roles(
 
 @router.get("/roles/{rol_id}",
             response_model=Rol,
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_ROLES, PERM_ADMIN_USUARIOS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_ROLES, perms.PERM_ADMINISTRAR_USUARIOS]))],
             summary="Obtener un Rol por ID",
             response_description="Información detallada del rol, incluyendo sus permisos.")
 def read_rol_by_id(
@@ -108,7 +108,7 @@ def read_rol_by_id(
 
 @router.put("/roles/{rol_id}",
             response_model=Rol,
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_ROLES]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_ROLES]))],
             summary="Actualizar un Rol",
             response_description="Información actualizada del rol.")
 def update_rol(
@@ -150,7 +150,7 @@ def update_rol(
 
 @router.delete("/roles/{rol_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_ROLES]))],
+               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_ROLES]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar un Rol",
                response_description="Mensaje de confirmación.")
@@ -211,7 +211,7 @@ def delete_rol(
 
 @router.get("/permisos/",
             response_model=List[PermisoSchema],
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_ROLES]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_ROLES]))],
             summary="Listar Permisos",
             response_description="Una lista de todos los permisos disponibles en el sistema.")
 def read_permisos(

@@ -18,11 +18,11 @@ from app.services.tipo_documento import tipo_documento_service
 from app.services.tipo_mantenimiento import tipo_mantenimiento_service
 from app.models.usuario import Usuario as UsuarioModel
 
+from app.core import permissions as perms
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Permisos
-PERM_ADMIN_CATALOGOS = "administrar_catalogos"
 # Usar dependencia directa para lectura por cualquier usuario autenticado
 PERM_VER_CATALOGOS = Depends(deps.get_current_active_user)
 
@@ -33,7 +33,7 @@ PERM_VER_CATALOGOS = Depends(deps.get_current_active_user)
 @router.post("/estados-equipo/",
              response_model=EstadoEquipoSchema,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
              summary="Crear Nuevo Estado de Equipo",
              response_description="El estado de equipo creado.")
 def create_estado_equipo(
@@ -113,7 +113,7 @@ def read_estado_equipo_by_id(
 
 @router.put("/estados-equipo/{estado_id}",
             response_model=EstadoEquipoSchema,
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
             summary="Actualizar Estado de Equipo",
             response_description="El estado de equipo actualizado.")
 def update_estado_equipo(
@@ -157,7 +157,7 @@ def update_estado_equipo(
 
 @router.delete("/estados-equipo/{estado_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
+               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar Estado de Equipo",
                response_description="Mensaje de confirmación o error.")
@@ -196,7 +196,7 @@ def delete_estado_equipo(
 @router.post("/tipos-documento/",
              response_model=TipoDocumentoSchema,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
              summary="Crear Tipo de Documento",
              )
 def create_tipo_documento(
@@ -259,7 +259,7 @@ def read_tipo_documento_by_id(
 
 @router.put("/tipos-documento/{tipo_id}",
             response_model=TipoDocumentoSchema,
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
             summary="Actualizar Tipo de Documento",
             )
 def update_tipo_documento(
@@ -299,7 +299,7 @@ def update_tipo_documento(
 
 @router.delete("/tipos-documento/{tipo_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
+               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar Tipo de Documento",
                )
@@ -341,7 +341,7 @@ def delete_tipo_documento(
 @router.post("/tipos-mantenimiento/",
              response_model=TipoMantenimientoSchema,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
              summary="Crear Tipo de Mantenimiento",
              )
 def create_tipo_mantenimiento(
@@ -404,7 +404,7 @@ def read_tipo_mantenimiento_by_id(
 
 @router.put("/tipos-mantenimiento/{tipo_id}",
             response_model=TipoMantenimientoSchema,
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
             summary="Actualizar Tipo de Mantenimiento",
             )
 def update_tipo_mantenimiento(
@@ -444,7 +444,7 @@ def update_tipo_mantenimiento(
 
 @router.delete("/tipos-mantenimiento/{tipo_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_CATALOGOS]))],
+               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar Tipo de Mantenimiento",
                )

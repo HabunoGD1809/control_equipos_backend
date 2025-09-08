@@ -11,14 +11,15 @@ from app.schemas.backup_log import BackupLog as BackupLogSchema
 from app.services.backup_log import backup_log_service # Servicio ya revisado
 from app.models.usuario import Usuario as UsuarioModel # Para el usuario actual
 
+from app.core import permissions as perms
+
 logger = logging.getLogger(__name__)
-PERM_ADMIN_SISTEMA = "administrar_sistema"
 
 router = APIRouter()
 
 @router.get("/",
             response_model=List[BackupLogSchema], # Usar el schema renombrado
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_SISTEMA]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_SISTEMA]))],
             summary="Consultar Logs de Backup",
             response_description="Una lista de registros de operaciones de backup.")
 def read_backup_logs(
@@ -64,7 +65,7 @@ def read_backup_logs(
 
 @router.get("/{log_id}",
             response_model=BackupLogSchema, # Usar el schema renombrado
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_SISTEMA]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_SISTEMA]))],
             summary="Obtener Log de Backup por ID",
             response_description="Información detallada del log de backup.")
 def read_backup_log_by_id(

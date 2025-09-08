@@ -11,16 +11,16 @@ from app.schemas import Usuario, UsuarioCreate, UsuarioUpdate, Msg
 from app.services.usuario import usuario_service
 from app.models import Usuario as UsuarioModel
 
+from app.core import permissions as perms
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-PERM_ADMIN_USUARIOS = "administrar_usuarios"
 
 @router.post(
     "/",
     response_model=Usuario,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(deps.PermissionChecker(PERM_ADMIN_USUARIOS))],
+    dependencies=[Depends(deps.PermissionChecker(perms.PERM_ADMINISTRAR_USUARIOS))],
     summary="Crear un nuevo Usuario",
     response_description="El usuario creado."
 )
@@ -38,8 +38,6 @@ def create_usuario(
     
     try:
         user = usuario_service.create(db=db, obj_in=user_in)
-        # CORRECCIÓN: Se realiza commit y refresh aquí para asegurar que los datos
-        # generados por la BD (como el ID) se carguen en el objeto antes de retornarlo.
         db.commit()
         db.refresh(user)
         db.refresh(user, attribute_names=['rol']) # Cargar explícitamente la relación de rol
@@ -128,7 +126,7 @@ def update_usuario_me(
 @router.get(
     "/",
     response_model=List[Usuario],
-    dependencies=[Depends(deps.PermissionChecker(PERM_ADMIN_USUARIOS))],
+    dependencies=[Depends(deps.PermissionChecker(perms.PERM_ADMINISTRAR_USUARIOS))],
     summary="Listar todos los Usuarios",
     response_description="Una lista de usuarios."
 )
@@ -150,7 +148,7 @@ def read_usuarios(
 @router.get(
     "/{user_id}",
     response_model=Usuario,
-    dependencies=[Depends(deps.PermissionChecker(PERM_ADMIN_USUARIOS))],
+    dependencies=[Depends(deps.PermissionChecker(perms.PERM_ADMINISTRAR_USUARIOS))],
     summary="Obtener un Usuario por ID",
     response_description="Información detallada del usuario."
 )
@@ -171,7 +169,7 @@ def read_usuario_by_id(
 @router.put(
     "/{user_id}",
     response_model=Usuario,
-    dependencies=[Depends(deps.PermissionChecker(PERM_ADMIN_USUARIOS))],
+    dependencies=[Depends(deps.PermissionChecker(perms.PERM_ADMINISTRAR_USUARIOS))],
     summary="Actualizar un Usuario por ID (Admin)",
     response_description="Información actualizada del usuario."
 )
@@ -213,7 +211,7 @@ def update_usuario(
 @router.delete(
     "/{user_id}",
     response_model=Msg,
-    dependencies=[Depends(deps.PermissionChecker(PERM_ADMIN_USUARIOS))],
+    dependencies=[Depends(deps.PermissionChecker(perms.PERM_ADMINISTRAR_USUARIOS))],
     status_code=status.HTTP_200_OK,
     summary="Eliminar un Usuario por ID (Admin)",
     response_description="Mensaje de confirmación."

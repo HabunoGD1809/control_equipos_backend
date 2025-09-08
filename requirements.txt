@@ -35,3 +35,6 @@ httpx
 
 # Celery
 celery[redis]
+
+# Color
+colorama

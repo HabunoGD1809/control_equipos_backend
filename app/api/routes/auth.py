@@ -93,7 +93,7 @@ def login_access_token(
     logger.info(f"Intento de login para usuario '{username_attempt}' desde IP {ip_address}")
 
     user = usuario_service.authenticate(
-        db, username=username_attempt, password=form_data.password
+        db, username_or_email=username_attempt, password=form_data.password
     )
 
     if not user or not usuario_service.is_active(user):
@@ -240,8 +240,6 @@ def change_password_logged_in(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Ocurrió un error interno al cambiar la contraseña."
         )
-    # Al retornar 204, no se debe enviar cuerpo de respuesta.
-    # FastAPI maneja esto automáticamente si la función retorna None.
     return None
 
 

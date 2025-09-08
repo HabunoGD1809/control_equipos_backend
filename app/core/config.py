@@ -1,7 +1,7 @@
 import json
 from typing import List, Union, Any, Optional
 
-from pydantic import field_validator, PostgresDsn, ValidationInfo
+from pydantic import field_validator, PostgresDsn, ValidationInfo, EmailStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
@@ -74,8 +74,9 @@ class Settings(BaseSettings):
     TEST_TESTER_PASSWORD: str
 
     # --- Credenciales para el Superusuario Inicial ---
-    SUPERUSER_EMAIL: str
+    SUPERUSER_EMAIL: EmailStr
     SUPERUSER_PASSWORD: str
+    SUPERUSER_USERNAME: str
 
     # --- Configuración moderna de Pydantic ---
     model_config = SettingsConfigDict(

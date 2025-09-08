@@ -17,6 +17,8 @@ Correcciones clave:
     exactamente con los datos de `datosControlEquipos.sql`, asegurando que
     todos los roles, permisos y catálogos necesarios existan desde el principio.
 3.  Se ha verificado el orden lógico de creación de todos los objetos de la BD.
+4.  Añadida la función `refresh_materialized_views()` que faltaba y su índice
+    único necesario para el correcto funcionamiento de las tareas programadas.
 """
 from typing import Sequence, Union
 
@@ -1067,6 +1069,21 @@ def upgrade() -> None:
     END;
     $$ LANGUAGE plpgsql;
     """)
+
+    op.execute("""
+    CREATE OR REPLACE FUNCTION control_equipos.refresh_materialized_views()
+    RETURNS VOID AS $$
+    BEGIN
+        RAISE NOTICE 'Refrescando vista materializada: mv_equipos_estado...';
+        REFRESH MATERIALIZED VIEW CONCURRENTLY control_equipos.mv_equipos_estado;
+        
+        RAISE NOTICE 'Refrescando vista materializada: mv_mantenimientos_proximos...';
+        REFRESH MATERIALIZED VIEW CONCURRENTLY control_equipos.mv_mantenimientos_proximos;
+        
+        RAISE NOTICE 'Vistas materializadas refrescadas exitosamente.';
+    END;
+    $$ LANGUAGE plpgsql;
+    """)
         
     # === PASO 4: CREACIÓN DE TRIGGERS (dependen de las funciones anteriores) ===
     op.execute("""
@@ -1461,6 +1478,7 @@ def upgrade() -> None:
     """)
     op.create_index('idx_mv_mantenimientos_proximos_fecha', 'mv_mantenimientos_proximos', ['fecha_proximo_mantenimiento'], unique=False, schema='control_equipos')
     op.create_index('idx_mv_mantenimientos_proximos_equipo', 'mv_mantenimientos_proximos', ['equipo_id'], unique=False, schema='control_equipos')
+    op.create_index('idx_mv_mantenimientos_proximos_mantenimiento_id', 'mv_mantenimientos_proximos', ['mantenimiento_id'], unique=True, schema='control_equipos')
 
 
 def downgrade() -> None:
@@ -1492,6 +1510,7 @@ def downgrade() -> None:
     """)
 
     op.execute("DROP FUNCTION IF EXISTS control_equipos.registrar_movimiento_equipo(UUID, UUID, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ, TEXT, TEXT, UUID) CASCADE;")
+    op.execute("DROP FUNCTION IF EXISTS control_equipos.refresh_materialized_views() CASCADE;")
     op.execute("DROP FUNCTION IF EXISTS control_equipos.actualizar_licencia_disponible_fn() CASCADE;")
     op.execute("DROP FUNCTION IF EXISTS control_equipos.actualizar_inventario_stock_fn() CASCADE;")
     op.execute("DROP FUNCTION IF EXISTS control_equipos.actualizar_fecha_proximo_mantenimiento() CASCADE;")
@@ -1529,6 +1548,7 @@ def downgrade() -> None:
     op.drop_table('estados_equipo', schema='control_equipos')
     op.drop_table('backup_logs', schema='control_equipos')
     op.drop_table('audit_log', schema='control_equipos')
+    op.drop_table('refresh_tokens', schema='control_equipos')
 
     # === PASO 3 (INVERSO): BORRAR SCHEMA Y EXTENSIONES ===
     op.execute("DROP SCHEMA IF EXISTS control_equipos CASCADE;")

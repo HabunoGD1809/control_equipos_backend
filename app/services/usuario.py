@@ -8,7 +8,6 @@ from sqlalchemy import select
 from fastapi import HTTPException, status
 
 # Importar modelos y schemas
-# from app.core.permissions import ADMIN_ROLE_NAME
 from app.models.usuario import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
 from app.schemas.password import PasswordChange
@@ -131,62 +130,51 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         return updated_db_obj
 
     def authenticate(
-        self, db: Session, *, username: str, password: str
+        self, db: Session, *, username_or_email: str, password: str
     ) -> Optional[Usuario]:
         """
-        Autentica a un usuario. Verifica nombre de usuario y contraseña.
-        [MODIFICADO] Ahora maneja los intentos fallidos.
+        Autentica a un usuario. Verifica nombre de usuario/email y contraseña.
+        [MODIFICADO] Ahora maneja los intentos fallidos y acepta email o username.
         """
-        user = self.get_by_username(db, username=username)
+        user: Optional[Usuario] = None
+        if "@" in username_or_email:
+            user = self.get_by_email(db, email=username_or_email)
+        else:
+            user = self.get_by_username(db, username=username_or_email)
+        
         if not user:
-            logger.warning(f"Intento de login fallido: Usuario '{username}' no encontrado.")
+            logger.warning(f"Intento de login fallido: Usuario '{username_or_email}' no encontrado.")
             return None
         
-        # Aunque el usuario ya esté bloqueado, lo devolvemos para que el endpoint
-        # maneje el mensaje de error específico.
         if user.bloqueado:
-            logger.warning(f"Intento de login para usuario '{username}' que ya está bloqueado.")
-            # No retornamos None aquí, para que el endpoint pueda diferenciar
-            # entre 'bloqueado' y 'credenciales incorrectas'.
-            # El método is_active se encargará de esto.
+            logger.warning(f"Intento de login para usuario '{user.nombre_usuario}' que ya está bloqueado.")
             return user
 
         if not verify_password(password, user.hashed_password):
-            logger.warning(f"Intento de login fallido: Contraseña incorrecta para usuario '{username}'.")
+            logger.warning(f"Intento de login fallido: Contraseña incorrecta para usuario '{user.nombre_usuario}'.")
             # --- Lógica para intento fallido ---
             user.intentos_fallidos = (user.intentos_fallidos or 0) + 1
             if user.intentos_fallidos >= 5: # Límite de intentos
                 user.bloqueado = True
-                logger.warning(f"Usuario '{username}' bloqueado por exceder 5 intentos fallidos.")
+                logger.warning(f"Usuario '{user.nombre_usuario}' bloqueado por exceder 5 intentos fallidos.")
             
             try:
                 db.add(user)
                 db.commit() # Guardamos el intento fallido
             except Exception as e:
-                logger.error(f"Error al actualizar intentos fallidos para {username}: {e}")
+                logger.error(f"Error al actualizar intentos fallidos para {user.nombre_usuario}: {e}")
                 db.rollback()
             return None # La autenticación falló
         
-        # Si la contraseña es correcta pero estaba bloqueado, no debería pasar, pero como salvaguarda
         if user.bloqueado:
-             return user # Dejar que el endpoint lo maneje con is_active
+             return user
 
-        logger.info(f"Usuario '{username}' autenticado preliminarmente (contraseña correcta).")
+        logger.info(f"Usuario '{user.nombre_usuario}' autenticado preliminarmente (contraseña correcta).")
         return user
 
     def is_active(self, user: Usuario) -> bool:
         """Verifica si un usuario está activo (no bloqueado)."""
         return not user.bloqueado
-    
-    # def is_admin(self, user: Usuario) -> bool:
-    #     """
-    #     Verifica si un usuario tiene el rol de 'admin'.
-    #     Es una comprobación de conveniencia.
-    #     """
-        
-    #     if user and user.rol:
-    #         return user.rol.nombre == ADMIN_ROLE_NAME
-    #     return False
     
     def needs_password_change(self, user: Usuario) -> bool:
         """Verifica si el usuario necesita cambiar su contraseña."""
@@ -213,14 +201,12 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         logger.debug(f"Intentando eliminar usuario ID: {id}")
         db_obj = self.get(db, id=id)
         if not db_obj:
-             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
         
         nombre_usuario_eliminado = db_obj.nombre_usuario
         
         db.delete(db_obj)
         logger.warning(f"Usuario '{nombre_usuario_eliminado}' (ID: {id}) preparado para ser eliminado.")
-        # La convención es no devolver el objeto, ya que se eliminará.
-        # Pero si se necesita para logs, se puede devolver.
         return db_obj
 
     def change_password(
@@ -233,7 +219,6 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         """
         logger.info(f"Iniciando cambio de contraseña para el usuario: {user.nombre_usuario}")
 
-        # 1. Verificar la contraseña actual
         if not verify_password(password_data.current_password, user.hashed_password):
             logger.warning(f"Intento de cambio de contraseña fallido para '{user.nombre_usuario}': contraseña actual incorrecta.")
             raise HTTPException(
@@ -241,17 +226,14 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
                 detail="La contraseña actual es incorrecta.",
             )
 
-        # 2. Hashear y actualizar la nueva contraseña
         user.hashed_password = get_password_hash(password_data.new_password)
         
-        # 3. Marcar que ya no se requiere cambio de contraseña
         user.requiere_cambio_contrasena = False
 
         db.add(user)
         logger.info(f"Contraseña actualizada exitosamente para el usuario '{user.nombre_usuario}'.")
         return user
 
-    # --- Método para iniciar el reseteo de contraseña ---
     def initiate_password_reset(self, db: Session, *, username: str) -> Usuario:
         """
         Genera y guarda un token de reseteo temporal para un usuario.
@@ -269,7 +251,6 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         logger.info(f"Token de reseteo de contraseña generado para el usuario '{username}'.")
         return user
 
-    # --- Método para confirmar el reseteo de contraseña ---
     def confirm_password_reset(
         self, db: Session, *, username: str, token: UUID, new_password: str
     ) -> Usuario:
@@ -279,7 +260,6 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         """
         user = self.get_by_username(db, username=username)
 
-        # Validaciones de seguridad
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
         
@@ -289,7 +269,6 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         if not user.token_expiracion or user.token_expiracion < datetime.now(timezone.utc):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El token de reseteo ha expirado.")
 
-        # Si todo es correcto, actualizamos la contraseña y limpiamos los tokens
         user.hashed_password = get_password_hash(new_password)
         user.token_temporal = None
         user.token_expiracion = None

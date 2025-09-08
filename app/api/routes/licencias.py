@@ -4,7 +4,7 @@ from uuid import UUID as PyUUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError # Para manejo de errores de BD
+from sqlalchemy.exc import IntegrityError
 
 # Importar dependencias, schemas, servicios, modelos
 from app.api import deps
@@ -13,18 +13,14 @@ from app.schemas.licencia_software import LicenciaSoftware, LicenciaSoftwareCrea
 from app.schemas.asignacion_licencia import AsignacionLicencia, AsignacionLicenciaCreate, AsignacionLicenciaUpdate
 from app.schemas.common import Msg
 from app.services.software_catalogo import software_catalogo_service
-from app.services.licencia_software import licencia_software_service # Servicio ya modificado
+from app.services.licencia_software import licencia_software_service
 from app.services.asignacion_licencia import asignacion_licencia_service
 from app.models.usuario import Usuario as UsuarioModel
 
+from app.core import permissions as perms
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# Permisos (ajustar según los nombres exactos en la BD)
-PERM_ADMIN_SOFTWARE_CATALOGO = "administrar_software_catalogo"
-PERM_ADMIN_LICENCIAS = "administrar_licencias"
-PERM_ASIGNAR_LICENCIAS = "asignar_licencias"
-PERM_VER_LICENCIAS = "ver_licencias" # Permiso general para ver catálogo, licencias y asignaciones
 
 # ==============================================================================
 # Endpoints para SOFTWARE CATALOGO
@@ -32,7 +28,7 @@ PERM_VER_LICENCIAS = "ver_licencias" # Permiso general para ver catálogo, licen
 @router.post("/catalogo/",
              response_model=SoftwareCatalogo,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_SOFTWARE_CATALOGO]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
              summary="Crear entrada en Catálogo de Software",
             #  tags=["licencias", "catalogo"]
              )
@@ -68,7 +64,7 @@ def create_software_catalogo_entry(
 
 @router.get("/catalogo/",
             response_model=List[SoftwareCatalogo],
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_LICENCIAS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))],
             summary="Listar Catálogo de Software",
             # tags=["licencias", "catalogo"]
             )
@@ -84,7 +80,7 @@ def read_software_catalogo(
 
 @router.get("/catalogo/{catalogo_id}",
             response_model=SoftwareCatalogo,
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_LICENCIAS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))],
             summary="Obtener entrada de Catálogo por ID",
             # tags=["licencias", "catalogo"]
             )
@@ -99,7 +95,7 @@ def read_software_catalogo_by_id(
 
 @router.put("/catalogo/{catalogo_id}",
             response_model=SoftwareCatalogo,
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_SOFTWARE_CATALOGO]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
             summary="Actualizar entrada de Catálogo",
             # tags=["licencias", "catalogo"]
             )
@@ -136,7 +132,7 @@ def update_software_catalogo_entry(
 
 @router.delete("/catalogo/{catalogo_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_SOFTWARE_CATALOGO]))],
+               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar entrada de Catálogo",
             #    tags=["licencias", "catalogo"]
@@ -178,7 +174,7 @@ def delete_software_catalogo_entry(
 @router.post("/",
              response_model=LicenciaSoftware,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_LICENCIAS]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_LICENCIAS]))],
              summary="Registrar una nueva Licencia Adquirida",
             #  tags=["licencias"]
              )
@@ -216,7 +212,7 @@ def create_licencia(
 
 @router.get("/",
             response_model=List[LicenciaSoftware],
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_LICENCIAS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))],
             summary="Listar Licencias Adquiridas",
             # tags=["licencias"]
             )
@@ -242,7 +238,7 @@ def read_licencias(
 
 @router.get("/{licencia_id}",
             response_model=LicenciaSoftware,
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_LICENCIAS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))],
             summary="Obtener Licencia por ID",
             # tags=["licencias"]
             )
@@ -257,7 +253,7 @@ def read_licencia_by_id(
 
 @router.put("/{licencia_id}",
             response_model=LicenciaSoftware,
-            dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_LICENCIAS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_LICENCIAS]))],
             summary="Actualizar Licencia Adquirida",
             # tags=["licencias"]
             )
@@ -293,7 +289,7 @@ def update_licencia(
 
 @router.delete("/{licencia_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_ADMIN_LICENCIAS]))],
+               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_LICENCIAS]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar Licencia Adquirida",
             #    tags=["licencias"]
@@ -338,7 +334,7 @@ def delete_licencia(
 @router.post("/asignaciones/",
              response_model=AsignacionLicencia,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([PERM_ASIGNAR_LICENCIAS]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ASIGNAR_LICENCIAS]))],
              summary="Asignar una Licencia",
             #  tags=["licencias", "asignaciones"]
              )
@@ -378,7 +374,7 @@ def create_asignacion(
 
 @router.get("/asignaciones/",
             response_model=List[AsignacionLicencia],
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_LICENCIAS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))],
             summary="Listar Asignaciones de Licencias",
             # tags=["licencias", "asignaciones"]
             )
@@ -406,7 +402,7 @@ def read_asignaciones(
 
 @router.get("/asignaciones/{asignacion_id}",
             response_model=AsignacionLicencia,
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_LICENCIAS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))],
             summary="Obtener Asignación por ID",
             # tags=["licencias", "asignaciones"]
             )
@@ -421,7 +417,7 @@ def read_asignacion_by_id(
 
 @router.put("/asignaciones/{asignacion_id}",
             response_model=AsignacionLicencia,
-            dependencies=[Depends(deps.PermissionChecker([PERM_ASIGNAR_LICENCIAS]))], # O un permiso de editar asignaciones
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ASIGNAR_LICENCIAS]))], # O un permiso de editar asignaciones
             summary="Actualizar una Asignación",
             # tags=["licencias", "asignaciones"]
             )
@@ -451,7 +447,7 @@ def update_asignacion(
 
 @router.delete("/asignaciones/{asignacion_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_ASIGNAR_LICENCIAS]))], # O desasignar_licencias
+               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ASIGNAR_LICENCIAS]))], # O desasignar_licencias
                status_code=status.HTTP_200_OK,
                summary="Eliminar una Asignación (Desasignar Licencia)",
             #    tags=["licencias", "asignaciones"]

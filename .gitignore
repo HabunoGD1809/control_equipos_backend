@@ -158,6 +158,7 @@ logs/
 *.log
 *.log.*
 log.txt
+uploads/
 
 # OS generated files
 .DS_Store

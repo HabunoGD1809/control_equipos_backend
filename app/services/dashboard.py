@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, date, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func as sql_func, text
 
-from app.schemas.dashboard import DashboardData, EquipoPorEstado
+from app.schemas.dashboard import DashboardData, EquipoPorEstado, MovimientoReciente
 from app.models.equipo import Equipo
 from app.models.mantenimiento import Mantenimiento
 from app.models.licencia_software import LicenciaSoftware
@@ -13,9 +13,12 @@ from app.models.inventario_stock import InventarioStock
 from app.models.estado_equipo import EstadoEquipo
 from app.models.tipo_mantenimiento import TipoMantenimiento
 
+from app.models.reserva_equipo import ReservaEquipo
+from app.models.documentacion import Documentacion
+from app.models.movimiento import Movimiento
+from app.models.usuario import Usuario
+
 from .equipo import equipo_service
-# from .licencia_software import licencia_software_service
-# from .mantenimiento import mantenimiento_service
 
 logger = logging.getLogger(__name__)
 
@@ -24,16 +27,14 @@ class DashboardService:
         logger.info("Obteniendo resumen de datos para el dashboard.")
 
         total_equipos = equipo_service.get_count(db)
-        logger.debug(f"Total de equipos: {total_equipos}")
 
         equipos_estado_list: List[EquipoPorEstado] = []
         try:
             stmt_view = text("SELECT estado_id, estado_nombre, cantidad_equipos, estado_color FROM control_equipos.mv_equipos_estado ORDER BY estado_nombre")
             result_view = db.execute(stmt_view)
             equipos_estado_list = [EquipoPorEstado(**row._mapping) for row in result_view] # type: ignore
-            logger.info("Equipos por estado obtenidos de la vista materializada.")
         except Exception as e_view:
-            logger.warning(f"No se pudo usar la vista materializada 'mv_equipos_estado' ({e_view}). Calculando dinámicamente...")
+            logger.warning(f"No se pudo usar la vista materializada 'mv_equipos_estado'. Calculando dinámicamente...")
             stmt_query = (
                 select(
                     EstadoEquipo.id.label("estado_id"),
@@ -47,10 +48,7 @@ class DashboardService:
             )
             result_query = db.execute(stmt_query)
             equipos_estado_list = [EquipoPorEstado(**row._mapping) for row in result_query] # type: ignore
-            logger.info("Equipos por estado calculados dinámicamente.")
-        logger.debug(f"Equipos por estado: {equipos_estado_list}")
 
-        # Corrección aquí: datetime.now(timezone.utc)
         fecha_limite_mant = datetime.now(timezone.utc) + timedelta(days=30)
         stmt_mant_count = (
             select(sql_func.count(Mantenimiento.id))
@@ -64,7 +62,6 @@ class DashboardService:
             )
         )
         mantenimientos_proximos_count = db.execute(stmt_mant_count).scalar_one_or_none() or 0
-        logger.debug(f"Mantenimientos próximos: {mantenimientos_proximos_count}")
 
         hoy_lic = date.today()
         fecha_limite_lic = hoy_lic + timedelta(days=30)
@@ -74,7 +71,6 @@ class DashboardService:
             LicenciaSoftware.fecha_expiracion <= fecha_limite_lic
         )
         licencias_por_expirar_count = db.execute(stmt_lic_count).scalar_one_or_none() or 0
-        logger.debug(f"Licencias por expirar: {licencias_por_expirar_count}")
 
         subquery_stock = (
             select(
@@ -90,16 +86,45 @@ class DashboardService:
             .where(subquery_stock.c.stock_total <= TipoItemInventario.stock_minimo)
         )
         items_bajo_stock_count = db.execute(stmt_low_stock_count).scalar_one_or_none() or 0
-        logger.debug(f"Items con bajo stock: {items_bajo_stock_count}")
+        
+        # 1. Reservas Pendientes
+        stmt_reservas = select(sql_func.count(ReservaEquipo.id)).where(ReservaEquipo.estado == 'Pendiente Aprobacion')
+        reservas_pendientes_count = db.execute(stmt_reservas).scalar_one_or_none() or 0
 
+        # 2. Documentos Pendientes de Verificación
+        stmt_docs = select(sql_func.count(Documentacion.id)).where(Documentacion.estado == 'Pendiente')
+        documentos_pendientes_count = db.execute(stmt_docs).scalar_one_or_none() or 0
+
+        # 3. Movimientos Recientes (Últimos 5)
+        stmt_movs = (
+            select(
+                Movimiento.id,
+                Equipo.nombre.label("equipo_nombre"),
+                Movimiento.tipo_movimiento,
+                Movimiento.fecha_hora,
+                Usuario.nombre_usuario.label("usuario_nombre")
+            )
+            .join(Equipo, Movimiento.equipo_id == Equipo.id)
+            .outerjoin(Usuario, Movimiento.usuario_id == Usuario.id)
+            .order_by(Movimiento.fecha_hora.desc())
+            .limit(5)
+        )
+        result_movs = db.execute(stmt_movs)
+        movimientos_recientes = [MovimientoReciente(**row._mapping) for row in result_movs] # type: ignore
+
+        # --- CONSTRUCCIÓN DE LA RESPUESTA ---
         dashboard_data = DashboardData(
             total_equipos=total_equipos,
             equipos_por_estado=equipos_estado_list,
             mantenimientos_proximos_count=mantenimientos_proximos_count,
             licencias_por_expirar_count=licencias_por_expirar_count,
-            items_bajo_stock_count=items_bajo_stock_count
+            items_bajo_stock_count=items_bajo_stock_count,
+            reservas_pendientes_count=reservas_pendientes_count,
+            documentos_pendientes_count=documentos_pendientes_count,
+            movimientos_recientes=movimientos_recientes
         )
-        logger.info("Resumen de dashboard generado exitosamente.")
+        
+        logger.info("Resumen de dashboard engordado generado exitosamente.")
         return dashboard_data
 
 dashboard_service = DashboardService()

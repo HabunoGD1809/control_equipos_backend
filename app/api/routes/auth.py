@@ -13,6 +13,8 @@ from app.core import security
 from app.core.password import verify_password
 from app.db.session import SessionLocal
 from app.models.usuario import Usuario as UsuarioModel
+from app.models.refresh_token import RefreshToken as RefreshTokenModel
+from app.models.notificacion import Notificacion
 from app.schemas.common import Msg
 from app.schemas.token import Token, RefreshToken as RefreshTokenSchema, RefreshTokenCreate
 from app.schemas.password import (
@@ -206,6 +208,44 @@ def refresh_access_token(
     }
 
 
+@router.post("/logout", status_code=status.HTTP_200_OK, summary="Cerrar sesión e invalidar token")
+def logout(
+    token_data: RefreshTokenSchema,
+    db: Session = Depends(deps.get_db)
+):
+    refresh_token_str = token_data.refresh_token
+    payload = security.decode_refresh_token(refresh_token_str)
+    
+    if not payload or not payload.sub:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token inválido. Asegúrate de enviar el Refresh Token, no el Access Token."
+        )
+        
+    active_tokens = db.query(RefreshTokenModel).filter(
+        RefreshTokenModel.usuario_id == payload.sub,
+        RefreshTokenModel.revoked_at.is_(None)
+    ).all()
+    
+    valid_token_found = None
+    for db_token in active_tokens:
+        if verify_password(refresh_token_str, db_token.token_hash):
+            valid_token_found = db_token
+            break
+            
+    if not valid_token_found:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="La sesión ya fue cerrada previamente o el token no existe."
+        )
+
+    refresh_token_service.revoke_token(db, token_obj=valid_token_found)
+    db.commit()
+    logger.info(f"Token revocado exitosamente durante el logout para usuario ID {payload.sub}.")
+    
+    return {"msg": "Sesión cerrada exitosamente."}
+
+
 @router.post(
     "/change-password",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -243,7 +283,6 @@ def change_password_logged_in(
     return None
 
 
-# --- Rutas de Reseteo de Contraseña ---
 @router.post(
     "/password-recovery/request-reset",
     response_model=PasswordResetResponse,
@@ -258,7 +297,7 @@ def request_password_reset(
     """
     **Endpoint solo para administradores.**
 
-    Inicia el proceso de reseteo de contraseña para un usuario específico.
+    Inicia el proceso de reseteo de contraseña para un usuario específico y le notifica.
     """
     logger.info(
         f"Admin '{current_user.nombre_usuario}' está solicitando reseteo de "
@@ -266,6 +305,17 @@ def request_password_reset(
     )
     try:
         user = usuario_service.initiate_password_reset(db, username=request_data.username)
+        
+        nueva_notificacion = Notificacion(
+            usuario_id=user.id,
+            mensaje=f"Un administrador ({current_user.nombre_usuario}) ha iniciado el reseteo de tu contraseña. Se requiere tu acción.",
+            tipo="alerta",
+            urgencia=1, # Urgencia alta
+            referencia_id=user.id,
+            referencia_tabla="usuarios"
+        )
+        db.add(nueva_notificacion)
+
         db.commit()
         db.refresh(user)
     except HTTPException:
@@ -333,3 +383,4 @@ def confirm_password_reset(
         )
         
     return Msg(msg="La contraseña ha sido actualizada exitosamente.")
+

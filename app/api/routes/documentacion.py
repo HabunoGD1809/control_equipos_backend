@@ -6,6 +6,7 @@ from uuid import UUID as PyUUID
 import shutil
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Form, Request 
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -19,7 +20,7 @@ from app.schemas.documentacion import (
 from app.schemas.common import Msg
 from app.services.documentacion import documentacion_service
 from app.models.usuario import Usuario as UsuarioModel
-from app.core.storage import save_upload_file, delete_uploaded_file, UPLOAD_DIR # Import UPLOAD_DIR
+from app.core.storage import save_upload_file, delete_uploaded_file, UPLOAD_DIR
 from app.core.config import settings
 from app.services.equipo import equipo_service
 
@@ -119,7 +120,6 @@ async def create_documentacion_with_upload(
     except Exception as e:
         db.rollback()
         logger.error(f"Error inesperado durante la subida de documento: {e}", exc_info=True)
-        # Corrección en el log de error: usar destination_path_for_log si está disponible
         path_to_log_delete = "desconocido"
         if saved_file_info and saved_file_info.get("file_path"):
              path_to_log_delete = str(destination_path_for_log or saved_file_info['file_path'])
@@ -181,11 +181,6 @@ def update_documentacion_metadata(
 ) -> Any:
     logger.info(f"Usuario '{current_user.nombre_usuario}' actualizando metadatos de documentación ID: {doc_id} con datos: {doc_in.model_dump(exclude_unset=True)}")
     db_doc = documentacion_service.get_or_404(db, id=doc_id)
-    
-    # La validación de si el equipo_id existe ya no es necesaria aquí porque DocumentacionUpdate no lo incluye.
-    # if doc_in.equipo_id and doc_in.equipo_id != db_doc.equipo_id:
-    #     if not deps.is_valid_uuid(str(doc_in.equipo_id)) or not equipo_service.get(db, id=doc_in.equipo_id):
-    #          raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Equipo con ID {doc_in.equipo_id} no encontrado.")
     
     try:
         updated_doc = documentacion_service.update(db=db, db_obj=db_doc, obj_in=doc_in)
@@ -268,7 +263,6 @@ async def delete_documentacion(
         if file_path_relative:
             file_delete_attempted = True
             try:
-                # Modificar delete_uploaded_file para que quizás devuelva un status o usar try-except aquí
                 await delete_uploaded_file(file_path_relative)
                 logger.info(f"Archivo físico '{file_path_relative}' eliminado correctamente para doc ID {doc_id}.")
                 file_actually_deleted = True
@@ -304,7 +298,31 @@ async def delete_documentacion(
         logger.error(f"Error inesperado eliminando documentación ID {doc_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al eliminar la documentación.")
 
-
+@router.get("/{doc_id}/download",
+            dependencies=[Depends(deps.PermissionChecker([PERM_VER_DOCUMENTOS]))],
+            summary="Descargar Archivo Físico del Documento",
+            response_class=FileResponse)
+def download_documentacion(
+    doc_id: PyUUID,
+    db: Session = Depends(deps.get_db),
+    current_user: UsuarioModel = Depends(deps.get_current_active_user),
+):
+    logger.info(f"Usuario '{current_user.nombre_usuario}' descargando documento ID: {doc_id}")
+    doc = documentacion_service.get_or_404(db, id=doc_id)
+    
+    if not doc.enlace:
+        raise HTTPException(status_code=404, detail="El registro no tiene un archivo físico asociado.")
+        
+    file_path = UPLOAD_DIR / doc.enlace
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="El archivo físico no se encontró en el disco del servidor.")
+        
+    return FileResponse(
+        path=file_path,
+        filename=doc.nombre_archivo,
+        media_type=doc.mime_type or "application/octet-stream"
+    )
+    
 @router.get("/equipo/{equipo_id}",
             response_model=List[Documentacion],
             dependencies=[Depends(deps.PermissionChecker([PERM_VER_DOCUMENTOS]))],

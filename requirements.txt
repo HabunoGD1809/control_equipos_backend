@@ -24,6 +24,7 @@ python-logging-loki  # Opcional
 
 # Utilidades
 python-dotenv
+fpdf2
 
 # Procesamiento de archivos
 aiofiles

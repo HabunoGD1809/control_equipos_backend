@@ -39,6 +39,7 @@ services:
       - ./app:/home/app/app
       - ./alembic:/home/app/alembic
       - ./alembic.ini:/home/app/alembic.ini
+      - ./uploads:/home/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -57,6 +58,7 @@ services:
     env_file: .env
     volumes:
       - ./app:/home/app/app
+      - ./uploads:/home/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -74,6 +76,7 @@ services:
     env_file: .env
     volumes:
       - ./app:/home/app/app
+      - ./uploads:/home/app/uploads
     depends_on:
       db:
         condition: service_healthy

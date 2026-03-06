@@ -31,15 +31,20 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: control_equipos_backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # uv run garantiza que se ejecute dentro del virtualenv correcto
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8086:8000"
     env_file: .env
+    # user: root solo para desarrollo local con volúmenes montados.
+    # En producción quita esta línea y dejar el usuario "app" del Dockerfile.
+    user: root
     volumes:
       - ./app:/home/app/app
       - ./alembic:/home/app/alembic
       - ./alembic.ini:/home/app/alembic.ini
       - ./uploads:/home/app/uploads
+      - ./logs:/home/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -54,11 +59,13 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: control_equipos_worker
-    command: celery -A app.worker worker --loglevel=info
+    command: uv run celery -A app.worker worker --loglevel=info
     env_file: .env
+    user: root
     volumes:
       - ./app:/home/app/app
       - ./uploads:/home/app/uploads
+      - ./logs:/home/app/logs
     depends_on:
       db:
         condition: service_healthy
@@ -67,16 +74,19 @@ services:
     networks:
       - control_equipos_net
 
+  # Servicio Programador (Celery Beat)
   beat:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: control_equipos_beat
-    command: celery -A app.worker beat --loglevel=info
+    command: uv run celery -A app.worker beat -s /tmp/celerybeat-schedule --pidfile=/tmp/celerybeat.pid --loglevel=info
     env_file: .env
+    user: root
     volumes:
       - ./app:/home/app/app
       - ./uploads:/home/app/uploads
+      - ./logs:/home/app/logs
     depends_on:
       db:
         condition: service_healthy

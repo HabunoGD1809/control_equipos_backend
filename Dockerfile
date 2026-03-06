@@ -1,56 +1,55 @@
-# --- Etapa 1: Build ---
-FROM python:latest AS builder
+# 1. Imagen base anclada a Debian 12 (Bookworm)
+FROM python:3.11-slim-bookworm
 
-# Establecer directorio de trabajo
-WORKDIR /app
-
-# Variables de entorno para Python
+# 2. Variables de entorno esenciales
 ENV PYTHONDONTWRITEBYTECODE=1 \
-   PYTHONUNBUFFERED=1
+   PYTHONUNBUFFERED=1 \
+   UV_COMPILE_BYTECODE=1 \
+   UV_LINK_MODE=copy
 
-# Instalar dependencias del sistema necesarias para COMPILAR psycopg
-RUN apt-get update && apt-get install -y --no-install-recommends \
-   libpq-dev build-essential gcc && \
+# 3. Instalar dependencias del sistema + aplicar todos los parches de seguridad disponibles.
+RUN apt-get update && \
+   apt-get upgrade -y --no-install-recommends && \
+   apt-get install -y --no-install-recommends \
+   postgresql-client && \
    rm -rf /var/lib/apt/lists/*
 
-# Instalar dependencias de Python en forma de wheels
-COPY requirements.txt .
-RUN pip install --upgrade pip
-RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
-
-
-# --- Etapa 2: Final ---
-FROM python:latest
-
-# Instalar solo librerías mínimas necesarias para EJECUTAR
-RUN apt-get update && apt-get install -y --no-install-recommends \
-   libpq5 postgresql-client && \
-   rm -rf /var/lib/apt/lists/*
-
-# Crear usuario no-root
+# 4. Crear usuario no-root por seguridad
 RUN addgroup --system app && adduser --system --group app
 
-# Directorio de trabajo
+# 5. Directorio de trabajo
 WORKDIR /home/app
 
-# Copiar dependencias precompiladas
-COPY --from=builder /wheels /wheels
-RUN pip install --no-cache /wheels/*
+# --- INTEGRACIÓN CON UV ---
+# 6. Copiar el binario ultrarrápido de uv desde la imagen oficial
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
-# Copiar el código de la aplicación y archivos necesarios
-COPY ./app ./app
-COPY ./alembic ./alembic
-COPY alembic.ini .
-COPY ./scripts ./scripts
+# 7. Copiar SOLO archivos de dependencias primero.
+COPY --chown=app:app pyproject.toml uv.lock ./
 
-# Cambiar propietario
-RUN chown -R app:app /home/app
+# 8. Sincronizar dependencias usando uv
+#    --frozen:              Usa uv.lock sin actualizarlo
+#    --no-dev:              Excluye dependencias de testing (pytest) en producción
+#    --no-install-project:  Instala SOLO dependencias, no el proyecto en sí.
+RUN uv sync --frozen --no-dev --no-install-project
 
-# Usar usuario no-root
+# 9. Copiar el código fuente y aplicar el propietario en una sola capa
+COPY --chown=app:app ./app ./app
+COPY --chown=app:app ./alembic ./alembic
+COPY --chown=app:app alembic.ini .
+COPY --chown=app:app ./scripts ./scripts
+
+# 10. Instalar el proyecto en sí
+RUN uv sync --frozen --no-dev
+
+# 11. Garantizar que los scripts tengan permisos de ejecución
+RUN chmod +x ./scripts/*.sh
+
+# 12. Cambiar al usuario seguro
 USER app
 
-# Exponer puerto
+# Exponer el puerto
 EXPOSE 8000
 
-# CMD por defecto (será sobrescrito por docker-compose)
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# CMD por defecto — usa uv run para ejecutar en el virtualenv gestionado por uv
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]

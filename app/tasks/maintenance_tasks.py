@@ -1,13 +1,14 @@
 import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import text
+from celery import shared_task
 
-from app.worker import celery_app
 from app.db.session import SessionLocal
 
 logger = logging.getLogger(__name__)
 
-@celery_app.task(name="tasks.refresh_materialized_views")
+# Al usar shared_task, la tarea es independiente de app/worker.py
+@shared_task(name="tasks.refresh_materialized_views")
 def task_refresh_materialized_views() -> str:
     """
     Tarea Celery para refrescar las vistas materializadas en la base de datos.
@@ -23,13 +24,12 @@ def task_refresh_materialized_views() -> str:
     except Exception as e:
         db.rollback()
         logger.error(f"Error en tarea refresh_materialized_views: {e}", exc_info=True)
-        # Podríamos reintentar la tarea usando las opciones de Celery
-        # raise self.retry(exc=e, countdown=60) # Reintentar en 60 segundos
+        # self.retry(exc=e, countdown=60) # Descomentar si le pasamos bind=True al shared_task
         return f"Error al refrescar vistas: {e}"
     finally:
         db.close()
         
-@celery_app.task(name="tasks.manage_audit_log_partitions")
+@shared_task(name="tasks.manage_audit_log_partitions")
 def task_manage_audit_log_partitions() -> str:
     """
     Tarea Celery que llama a la función de PostgreSQL para gestionar 

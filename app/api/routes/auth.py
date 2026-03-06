@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 
 from app.api import deps
 from app.core import security
-from app.core.password import verify_password
+from app.core.password import verify_password, verify_token_hash, hash_token
 from app.db.session import SessionLocal
 from app.models.usuario import Usuario as UsuarioModel
 from app.models.refresh_token import RefreshToken as RefreshTokenModel
@@ -27,7 +27,7 @@ from app.services.refresh_token import refresh_token_service
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# --- Función para Tarea de Fondo (Manejo Seguro de Sesión DB) ---
+# --- Funcion para Tarea de Fondo (Manejo Seguro de Sesion DB) ---
 def log_login_attempt_task(
     username_attempt: Optional[str],
     success: bool,
@@ -38,12 +38,11 @@ def log_login_attempt_task(
 ):
     """
     Tarea de fondo para registrar un intento de login.
-    Crea y cierra su propia sesión de base de datos para operar de forma independiente.
+    Crea y cierra su propia sesion de base de datos para operar de forma independiente.
     """
     db: Optional[Session] = None
     try:
         db = SessionLocal()
-        
         login_log_service.log_attempt(
             db=db,
             username_attempt=username_attempt,
@@ -53,10 +52,8 @@ def log_login_attempt_task(
             fail_reason=fail_reason,
             user_id=user_id
         )
-        
         db.commit()
         logger.info(f"Intento de login (UsuarioIntento: '{username_attempt}', Exito: {success}) registrado en background.")
-
     except IntegrityError as e:
         logger.warning(
             f"No se pudo registrar el intento de login para '{username_attempt}'. "
@@ -64,12 +61,10 @@ def log_login_attempt_task(
         )
         if db:
             db.rollback()
-    
     except SQLAlchemyError as e_sql:
         logger.error(f"ERROR de SQLAlchemy en tarea de fondo log_login_attempt_task: {e_sql}", exc_info=True)
         if db:
             db.rollback()
-    
     except Exception as e_gen:
         logger.error(f"ERROR general en tarea de fondo log_login_attempt_task: {e_gen}", exc_info=True)
         if db:
@@ -77,6 +72,7 @@ def log_login_attempt_task(
     finally:
         if db:
             db.close()
+
 
 # --- Rutas de Login ---
 @router.post("/login/access-token", response_model=Token)
@@ -87,7 +83,7 @@ def login_access_token(
     form_data: OAuth2PasswordRequestForm = Depends()
 ) -> Any:
     """
-    Endpoint de login. Crea una nueva sesión y devuelve tokens.
+    Endpoint de login. Crea una nueva sesion y devuelve tokens.
     """
     ip_address = request.client.host if request.client else "N/A"
     user_agent = request.headers.get("user-agent", "N/A")
@@ -108,7 +104,7 @@ def login_access_token(
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nombre de usuario o contraseña incorrectos, o usuario bloqueado.",
+            detail="Nombre de usuario o contrasena incorrectos, o usuario bloqueado.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -119,24 +115,22 @@ def login_access_token(
         refresh_token_str = security.create_refresh_token(subject=user.id)
 
         token_create_schema = RefreshTokenCreate(token=refresh_token_str, usuario_id=user.id)
-        
         refresh_token_service.create_token(
             db, obj_in=token_create_schema, user_agent=user_agent, ip_address=ip_address
         )
-
         usuario_service.handle_successful_login(db, user=user)
         db.commit()
     except Exception as e:
         db.rollback()
-        logger.error(f"Error crítico al crear sesión para {user.nombre_usuario}: {e}", exc_info=True)
+        logger.error(f"Error critico al crear sesion para {user.nombre_usuario}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor al procesar el login.")
-    
+
     background_tasks.add_task(
         log_login_attempt_task,
         username_attempt=username_attempt, success=True,
         ip_address=ip_address, user_agent=user_agent, user_id=user.id
     )
-    
+
     return {
         "access_token": access_token,
         "refresh_token": refresh_token_str,
@@ -151,54 +145,52 @@ def refresh_access_token(
     db: Session = Depends(deps.get_db),
 ):
     """
-    Obtiene un nuevo par de tokens a partir de un refresh token válido,
-    implementando la rotación de tokens para mayor seguridad.
+    Obtiene un nuevo par de tokens a partir de un refresh token valido,
+    implementando la rotacion de tokens para mayor seguridad.
     """
     refresh_token_str = token_data.refresh_token
     payload = security.decode_refresh_token(refresh_token_str)
 
     if not payload or not payload.sub:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token de refresco inválido o expirado")
-    
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token de refresco invalido o expirado")
+
     user = usuario_service.get(db, id=payload.sub)
 
     if not user or not usuario_service.is_active(user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuario no encontrado o inactivo")
 
-    # Buscar el token de refresco válido en la base de datos
+    # Buscar el token valido usando SHA-256 (no bcrypt)
     valid_token_found = None
     for db_token in user.refresh_tokens:
         if (
             db_token.revoked_at is None and
             db_token.expires_at > datetime.now(timezone.utc) and
-            verify_password(refresh_token_str, db_token.token_hash)
+            verify_token_hash(refresh_token_str, db_token.token_hash)
         ):
             valid_token_found = db_token
             break
-    
+
     if not valid_token_found:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token de refresco no es válido o ha sido revocado.")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token de refresco no es valido o ha sido revocado.")
 
     try:
-        # Revocar el token viejo
-        refresh_token_service.revoke_token(db, token_obj=valid_token_found)
-        
+        # Revocar el token viejo (pasamos el plain_token para verificacion interna)
+        refresh_token_service.revoke_token(db, token_obj=valid_token_found, plain_token=refresh_token_str)
+
         # Crear un nuevo par de tokens
         new_access_token = security.create_access_token(subject=user.id)
         new_refresh_token_str = security.create_refresh_token(subject=user.id)
 
-        # Crear el nuevo registro de sesión con la info del request actual
         ip_address = request.client.host if request.client else "N/A"
         user_agent = request.headers.get("user-agent", "N/A")
         new_token_create = RefreshTokenCreate(token=new_refresh_token_str, usuario_id=user.id)
         refresh_token_service.create_token(
             db, obj_in=new_token_create, user_agent=user_agent, ip_address=ip_address
         )
-        
         db.commit()
     except Exception as e:
         db.rollback()
-        logger.error(f"Error crítico al rotar el refresh token para {user.nombre_usuario}: {e}", exc_info=True)
+        logger.error(f"Error critico al rotar el refresh token para {user.nombre_usuario}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error interno del servidor al refrescar el token.")
 
     return {
@@ -208,48 +200,49 @@ def refresh_access_token(
     }
 
 
-@router.post("/logout", status_code=status.HTTP_200_OK, summary="Cerrar sesión e invalidar token")
+@router.post("/logout", status_code=status.HTTP_200_OK, summary="Cerrar sesion e invalidar token")
 def logout(
     token_data: RefreshTokenSchema,
     db: Session = Depends(deps.get_db)
 ):
     refresh_token_str = token_data.refresh_token
     payload = security.decode_refresh_token(refresh_token_str)
-    
+
     if not payload or not payload.sub:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token inválido. Asegúrate de enviar el Refresh Token, no el Access Token."
+            detail="Token invalido. Asegurate de enviar el Refresh Token, no el Access Token."
         )
-        
+
     active_tokens = db.query(RefreshTokenModel).filter(
         RefreshTokenModel.usuario_id == payload.sub,
         RefreshTokenModel.revoked_at.is_(None)
     ).all()
-    
+
+    # Buscar el token usando SHA-256 (no bcrypt)
     valid_token_found = None
     for db_token in active_tokens:
-        if verify_password(refresh_token_str, db_token.token_hash):
+        if verify_token_hash(refresh_token_str, db_token.token_hash):
             valid_token_found = db_token
             break
-            
+
     if not valid_token_found:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="La sesión ya fue cerrada previamente o el token no existe."
+            detail="La sesion ya fue cerrada previamente o el token no existe."
         )
 
-    refresh_token_service.revoke_token(db, token_obj=valid_token_found)
+    refresh_token_service.revoke_token(db, token_obj=valid_token_found, plain_token=refresh_token_str)
     db.commit()
     logger.info(f"Token revocado exitosamente durante el logout para usuario ID {payload.sub}.")
-    
-    return {"msg": "Sesión cerrada exitosamente."}
+
+    return {"msg": "Sesion cerrada exitosamente."}
 
 
 @router.post(
     "/change-password",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Permite al usuario logueado cambiar su contraseña"
+    summary="Permite al usuario logueado cambiar su contrasena"
 )
 def change_password_logged_in(
     *,
@@ -258,12 +251,10 @@ def change_password_logged_in(
     current_user: UsuarioModel = Depends(deps.get_current_active_user)
 ):
     """
-    **Endpoint para usuarios autenticados.**
-
-    Permite al usuario que ha iniciado sesión cambiar su propia contraseña.
-    Debe proporcionar su contraseña actual y la nueva.
+    Permite al usuario que ha iniciado sesion cambiar su propia contrasena.
+    Debe proporcionar su contrasena actual y la nueva.
     """
-    logger.info(f"Usuario '{current_user.nombre_usuario}' ha solicitado cambiar su contraseña.")
+    logger.info(f"Usuario '{current_user.nombre_usuario}' ha solicitado cambiar su contrasena.")
     try:
         usuario_service.change_password(db=db, user=current_user, password_data=password_data)
         db.commit()
@@ -273,12 +264,12 @@ def change_password_logged_in(
     except Exception as e:
         db.rollback()
         logger.error(
-            f"Error al cambiar la contraseña para '{current_user.nombre_usuario}'. Error: {e}",
+            f"Error al cambiar la contrasena para '{current_user.nombre_usuario}'. Error: {e}",
             exc_info=True
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ocurrió un error interno al cambiar la contraseña."
+            detail="Ocurrio un error interno al cambiar la contrasena."
         )
     return None
 
@@ -287,7 +278,7 @@ def change_password_logged_in(
     "/password-recovery/request-reset",
     response_model=PasswordResetResponse,
     status_code=status.HTTP_200_OK,
-    summary="[Admin] Inicia el reseteo de contraseña para un usuario"
+    summary="[Admin] Inicia el reseteo de contrasena para un usuario"
 )
 def request_password_reset(
     request_data: PasswordResetRequest,
@@ -295,27 +286,25 @@ def request_password_reset(
     current_user: UsuarioModel = Depends(deps.require_admin),
 ):
     """
-    **Endpoint solo para administradores.**
-
-    Inicia el proceso de reseteo de contraseña para un usuario específico y le notifica.
+    Endpoint solo para administradores.
+    Inicia el proceso de reseteo de contrasena para un usuario especifico y le notifica.
     """
     logger.info(
-        f"Admin '{current_user.nombre_usuario}' está solicitando reseteo de "
-        f"contraseña para usuario '{request_data.username}'."
+        f"Admin '{current_user.nombre_usuario}' esta solicitando reseteo de "
+        f"contrasena para usuario '{request_data.username}'."
     )
     try:
         user = usuario_service.initiate_password_reset(db, username=request_data.username)
-        
+
         nueva_notificacion = Notificacion(
             usuario_id=user.id,
-            mensaje=f"Un administrador ({current_user.nombre_usuario}) ha iniciado el reseteo de tu contraseña. Se requiere tu acción.",
+            mensaje=f"Un administrador ({current_user.nombre_usuario}) ha iniciado el reseteo de tu contrasena. Se requiere tu accion.",
             tipo="alerta",
-            urgencia=1, # Urgencia alta
+            urgencia=1,
             referencia_id=user.id,
             referencia_tabla="usuarios"
         )
         db.add(nueva_notificacion)
-
         db.commit()
         db.refresh(user)
     except HTTPException:
@@ -324,15 +313,15 @@ def request_password_reset(
     except Exception as e:
         db.rollback()
         logger.error(
-            f"Error al iniciar el reseteo de contraseña para '{request_data.username}'. "
+            f"Error al iniciar el reseteo de contrasena para '{request_data.username}'. "
             f"Admin: '{current_user.nombre_usuario}'. Error: {e}",
             exc_info=True
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ocurrió un error al procesar la solicitud."
+            detail="Ocurrio un error al procesar la solicitud."
         )
-    
+
     if not user.token_temporal or not user.token_expiracion:
         raise HTTPException(status_code=500, detail="Error al generar el token.")
 
@@ -347,19 +336,17 @@ def request_password_reset(
     "/password-recovery/confirm-reset",
     response_model=Msg,
     status_code=status.HTTP_200_OK,
-    summary="Confirma y establece una nueva contraseña"
+    summary="Confirma y establece una nueva contrasena"
 )
 def confirm_password_reset(
     reset_data: PasswordResetConfirm,
     db: Session = Depends(deps.get_db),
 ):
     """
-    **Endpoint público.**
-
-    Permite a un usuario establecer una nueva contraseña utilizando el token
+    Permite a un usuario establecer una nueva contrasena utilizando el token
     que le fue proporcionado por un administrador.
     """
-    logger.info(f"Intento de confirmar reseteo de contraseña para usuario '{reset_data.username}'.")
+    logger.info(f"Intento de confirmar reseteo de contrasena para usuario '{reset_data.username}'.")
     try:
         usuario_service.confirm_password_reset(
             db,
@@ -374,13 +361,12 @@ def confirm_password_reset(
     except Exception as e:
         db.rollback()
         logger.error(
-            f"Error al confirmar el reseteo de contraseña para '{reset_data.username}'. Error: {e}",
+            f"Error al confirmar el reseteo de contrasena para '{reset_data.username}'. Error: {e}",
             exc_info=True
         )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Ocurrió un error al resetear la contraseña."
+            detail="Ocurrio un error al resetear la contrasena."
         )
-        
-    return Msg(msg="La contraseña ha sido actualizada exitosamente.")
 
+    return Msg(msg="La contrasena ha sido actualizada exitosamente.")

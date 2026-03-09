@@ -20,7 +20,11 @@ from app.models.usuario import Usuario as UsuarioModel
 from app.core import permissions as perms
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+
+# ✅ redirect_slashes=False: Next.js elimina trailing slashes en request.nextUrl.pathname,
+# con esta opción el router acepta /asignaciones y /asignaciones/ como rutas distintas
+# sin intentar hacer redirect, evitando que /{licencia_id} capture "/asignaciones".
+router = APIRouter(redirect_slashes=False)
 
 # ==============================================================================
 # Endpoints para SOFTWARE CATALOGO
@@ -41,7 +45,6 @@ def create_software_catalogo_entry(
     """Crea un nuevo registro en el catálogo de software."""
     logger.info(f"Usuario '{current_user.nombre_usuario}' creando entrada de catálogo SW: {catalogo_in.nombre} v{catalogo_in.version}")
     try:
-        # y maneja validaciones de unicidad (nombre/versión).
         catalogo = software_catalogo_service.create(db=db, obj_in=catalogo_in)
         db.commit()
         db.refresh(catalogo)
@@ -148,7 +151,6 @@ def delete_software_catalogo_entry(
     catalogo_a_eliminar = software_catalogo_service.get_or_404(db, id=catalogo_id)
     nombre_catalogo_log = f"{catalogo_a_eliminar.nombre} v{catalogo_a_eliminar.version}"
     try:
-        # y puede lanzar HTTPException 409 si hay licencias asociadas (debido a FK RESTRICT).
         software_catalogo_service.remove(db=db, id=catalogo_id)
         db.commit()
         logger.info(f"Entrada de catálogo SW '{nombre_catalogo_log}' (ID: {catalogo_id}) eliminada exitosamente.")
@@ -219,7 +221,6 @@ def read_licencias(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=200),
     software_catalogo_id: Optional[PyUUID] = Query(None, description="Filtrar por ID de software del catálogo"),
-    # proveedor_id: Optional[PyUUID] = Query(None, description="Filtrar por ID de proveedor"), # TODO: Implementar si es necesario
     expiring_days: Optional[int] = Query(None, ge=0, description="Mostrar licencias que expiran en los próximos N días"),
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
@@ -236,13 +237,16 @@ def read_licencias(
 # ==============================================================================
 # Endpoints para ASIGNACIONES DE LICENCIAS
 # ==============================================================================
-@router.post("/asignaciones/",
+
+@router.post("/asignaciones",
              response_model=AsignacionLicencia,
              status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(deps.PermissionChecker([perms.PERM_ASIGNAR_LICENCIAS]))],
              summary="Asignar una Licencia",
             #  tags=["licencias", "asignaciones"]
              )
+@router.post("/asignaciones/", include_in_schema=False,
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ASIGNAR_LICENCIAS]))])
 def create_asignacion(
     *,
     db: Session = Depends(deps.get_db),
@@ -252,8 +256,6 @@ def create_asignacion(
     """Asigna una licencia disponible a un equipo o a un usuario."""
     logger.info(f"Usuario '{current_user.nombre_usuario}' asignando licencia ID: {asignacion_in.licencia_id} a Equipo/Usuario.")
     try:
-        # y maneja validaciones (disponibilidad, FKs, unicidad de asignación).
-        # También debería llamar a la función de BD para decrementar cantidad_disponible.
         asignacion = asignacion_licencia_service.create(db=db, obj_in=asignacion_in)
         db.commit()
         db.refresh(asignacion)
@@ -276,11 +278,13 @@ def create_asignacion(
         logger.error(f"Error inesperado creando asignación de licencia: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al crear la asignación.")
 
-@router.get("/asignaciones/",
+@router.get("/asignaciones",
             response_model=List[AsignacionLicencia],
             dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))],
             summary="Listar Asignaciones de Licencias",
             )
+@router.get("/asignaciones/", include_in_schema=False,
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))])
 def read_asignaciones(
     db: Session = Depends(deps.get_db),
     skip: int = Query(0, ge=0),
@@ -367,7 +371,6 @@ def delete_asignacion(
     asignacion_a_eliminar = asignacion_licencia_service.get_or_404(db, id=asignacion_id)
     lic_id_log = asignacion_a_eliminar.licencia_id
     try:
-        # Y que el trigger AFTER DELETE en asignaciones_licencia se encarga de actualizar cantidad_disponible.
         asignacion_licencia_service.remove(db=db, id=asignacion_id)
         db.commit()
         logger.info(f"Asignación de licencia ID {asignacion_id} (para Licencia ID: {lic_id_log}) eliminada exitosamente.")

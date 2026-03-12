@@ -1,5 +1,5 @@
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -18,7 +18,8 @@ class EquipoBase(BaseModel):
     numero_serie: str = Field(..., max_length=100, description="Número de serie único del fabricante")
     codigo_interno: Optional[str] = Field(None, max_length=100, description="Código de activo fijo de la empresa")
     estado_id: uuid.UUID = Field(..., description="ID del estado actual del equipo")
-    ubicacion_actual: Optional[str] = Field(None, description="Descripción de la ubicación actual (sala, edificio, usuario)")
+    ubicacion_id: Optional[uuid.UUID] = None # <-- CAMBIO A UUID
+    # ubicacion_actual: Optional[str] = Field(None, description="Descripción de la ubicación actual (sala, edificio, usuario)")
     marca: Optional[str] = Field(None, max_length=100)
     modelo: Optional[str] = Field(None, max_length=100)
     fecha_adquisicion: Optional[date] = None
@@ -46,7 +47,7 @@ class EquipoUpdate(BaseModel):
     """
     nombre: Optional[str] = Field(None, max_length=255)
     estado_id: Optional[uuid.UUID] = None
-    ubicacion_actual: Optional[str] = None
+    ubicacion_id: Optional[uuid.UUID] = None
     marca: Optional[str] = Field(None, max_length=100)
     modelo: Optional[str] = Field(None, max_length=100)
     fecha_adquisicion: Optional[date] = None
@@ -77,6 +78,7 @@ class EquipoRead(EquipoInDBBase):
     """
     estado: Optional[EstadoEquipoSimple] = None
     proveedor: Optional[ProveedorSimple] = None
+    ubicacion_actual: Optional[str] = None # Mantenemos esto en el read para que el frontend no se rompa (lo calcularemos en el servicio)
 
 # ===============================================================
 # Schema Simple (para listas o referencias)
@@ -92,7 +94,7 @@ class EquipoSimple(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 # ===============================================================
-# Schemas para Búsqueda
+# Schemas para Búsqueda y Operaciones Masivas
 # ===============================================================
 class EquipoSearchResult(BaseModel):
     """Schema para los resultados de búsqueda específicos de equipos."""
@@ -117,3 +119,9 @@ class GlobalSearchResult(BaseModel):
     metadata: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+class EquipoBulkResult(BaseModel):
+    """Resultados de una operación de carga masiva por CSV."""
+    total_procesados: int
+    insertados: int
+    errores: List[str]

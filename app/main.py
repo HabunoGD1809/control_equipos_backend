@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=settings.PROJECT_NAME,
     description="API para el Sistema de Control y Gestión de Equipos Físicos, Inventario, Licencias y Reservas.",
-    version="1.1.0",
+    version="1.3.0",
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
     docs_url=f"{settings.API_V1_STR}/docs",
     redoc_url=f"{settings.API_V1_STR}/redoc",
@@ -73,8 +73,6 @@ uploads_path = Path(settings.UPLOADS_DIRECTORY)
 uploads_path.mkdir(parents=True, exist_ok=True)
 static_route_prefix = f"/static/{uploads_path.name}"
 try:
-    # --- 2. LÓGICA DE COMPROBACIÓN CORREGIDA ---
-    # Se verifica si alguna de las rutas es una instancia de Mount y su path coincide.
     is_mounted = any(
         isinstance(route, Mount) and route.path == static_route_prefix
         for route in app.routes

@@ -1,6 +1,6 @@
-from typing import Generator, Annotated, Union, List, Set
+from typing import Generator, Annotated, Union, List, Set, Optional
 from uuid import UUID
-from fastapi import Depends, HTTPException, status, Request
+from fastapi import Depends, HTTPException, status, Request, Query, Header
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
 from pydantic import ValidationError
@@ -85,6 +85,30 @@ def get_current_active_user(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El usuario está inactivo o bloqueado.")
     return current_user
 
+# Autenticación Híbrida para Server-Sent Events (SSE)
+def get_current_user_sse(
+    db: Session = Depends(get_db),
+    token: Optional[str] = Query(None),
+    authorization: Optional[str] = Header(None)
+) -> Usuario:
+    """
+    Dependency específica para endpoints SSE (EventSource en JS no envía headers custom).
+    Intenta extraer el token del header primero, y si no, usa el query param.
+    """
+    actual_token = None
+    if authorization and authorization.startswith("Bearer "):
+        actual_token = authorization.split(" ")[1]
+    elif token:
+        actual_token = token
+        
+    if not actual_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated for SSE stream",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+        
+    return get_current_active_user(get_current_user(db=db, token=actual_token))
 
 class PermissionChecker:
     """
@@ -153,4 +177,3 @@ def require_supervisor(current_user: Usuario = Depends(get_current_active_user))
     if not current_user.rol or current_user.rol.nombre not in roles_permitidos:
         logger.warning(f"Acceso denegado (Supervisor/Admin requerido) para {current_user.nombre_usuario} (Rol: {current_user.rol.nombre if current_user.rol else 'N/A'}).")
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Se requiere rol de supervisor o administrador.")
-

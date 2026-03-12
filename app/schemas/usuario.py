@@ -22,6 +22,7 @@ class UsuarioBase(BaseModel):
     """Campos base que comparte un usuario."""
     nombre_usuario: str = Field(..., min_length=3, max_length=50, description="Nombre de usuario único")
     email: Optional[EmailStr] = Field(None, description="Correo electrónico del usuario")
+    avatar_url: Optional[str] = Field(None, description="URL de la foto de perfil en la nube")
 
 class UsuarioCreate(UsuarioBase):
     """Schema para crear un nuevo usuario. Requiere contraseña y rol."""
@@ -40,12 +41,13 @@ class UsuarioUpdate(BaseModel):
     intentos_fallidos: Optional[int] = None
     bloqueado: Optional[bool] = None
     requiere_cambio_contrasena: Optional[bool] = None
+    avatar_url: Optional[str] = None
 
 class UsuarioInDBBase(UsuarioBase):
     """Schema base que refleja el modelo de la base de datos, incluyendo campos privados."""
     id: uuid.UUID
     rol_id: uuid.UUID
-    hashed_password: str  # Nombre consistente con el modelo ORM
+    hashed_password: str
     token_temporal: Optional[uuid.UUID] = None
     token_expiracion: Optional[datetime] = None
     intentos_fallidos: int
@@ -82,5 +84,6 @@ class UsuarioSimple(BaseModel):
     id: uuid.UUID
     nombre_usuario: str
     email: Optional[EmailStr] = None
+    avatar_url: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -9,6 +9,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     String,
+    Text
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from .reserva_equipo import ReservaEquipo
     from .inventario_movimiento import InventarioMovimiento
     from .refresh_token import RefreshToken
+    from .reporte import Reporte
 
 
 class Usuario(Base):
@@ -39,6 +41,7 @@ class Usuario(Base):
     hashed_password: Mapped[str] = mapped_column("contrasena", String)
     rol_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("roles.id"), index=True)
     email: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     token_temporal: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
     token_expiracion: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     intentos_fallidos: Mapped[int] = mapped_column(Integer, default=0)
@@ -118,6 +121,13 @@ class Usuario(Base):
         foreign_keys="InventarioMovimiento.usuario_id",
         back_populates="usuario_registrador",
         lazy="selectin"
+    )
+    
+    reportes_solicitados: Mapped[List["Reporte"]] = relationship(
+        "Reporte",
+        back_populates="usuario",
+        lazy="selectin",
+        cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:

@@ -58,9 +58,16 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str
     CELERY_RESULT_BACKEND: str
 
-    # --- Configuración de Almacenamiento ---
+    # --- Configuración de Almacenamiento Local (Fallback) ---
     UPLOADS_DIRECTORY: str = "./uploads"
     MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
+
+    # --- Configuración de Almacenamiento Cloud (S3 / MinIO) ---
+    AWS_ACCESS_KEY_ID: Optional[str] = None
+    AWS_SECRET_ACCESS_KEY: Optional[str] = None
+    AWS_REGION: Optional[str] = "us-east-1"
+    AWS_BUCKET_NAME: Optional[str] = None
+    AWS_ENDPOINT_URL: Optional[str] = None
 
     # --- Otras Configuraciones ---
     MAX_FAILED_ATTEMPTS_BEFORE_LOCK: int = 5

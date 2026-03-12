@@ -18,8 +18,6 @@ class Base(DeclarativeBase):
     Clase base para todos los modelos ORM de SQLAlchemy.
     """
     metadata = metadata
-    # Ya no necesitas __table_args__ = {"schema": "control_equipos"} en cada modelo
-    # si lo defines en MetaData.
 
     pass
 

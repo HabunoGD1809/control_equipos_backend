@@ -32,6 +32,12 @@ class MovimientoUpdate(BaseModel):
     recibido_por: Optional[str] = None
     observaciones: Optional[str] = None
 
+# --- Schema para Cambio de Estado (Máquina de Estados) ---
+class MovimientoEstadoUpdate(BaseModel):
+    """Schema específico para autorizar, rechazar o confirmar recepción de un movimiento."""
+    estado: EstadoMovimientoEquipoEnum = Field(..., description="El nuevo estado del movimiento")
+    observaciones: Optional[str] = Field(None, description="Justificación de la decisión")
+
 # --- Schema Interno DB ---
 class MovimientoInDBBase(MovimientoBase):
     """Schema que refleja el modelo completo de la BD, incluyendo metadatos y FKs."""

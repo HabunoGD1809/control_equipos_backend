@@ -2,7 +2,7 @@ import logging
 from typing import Any, Optional, List
 from uuid import UUID
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import select, func as sql_func
 from fastapi import HTTPException, status
 
@@ -24,7 +24,7 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
         db: Session,
         *,
         tipo_item_id: Optional[UUID] = None,
-        ubicacion: Optional[str] = None,
+        ubicacion_id: Optional[UUID] = None,
         lote: Optional[str] = None,
         skip: int = 0,
         limit: int = 100,
@@ -34,20 +34,21 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
         """
         logger.debug(
             f"Listando stock con filtros: tipo_item_id='{tipo_item_id}', "
-            f"ubicacion='{ubicacion}', lote='{lote}', skip={skip}, limit={limit}"
+            f"ubicacion_id='{ubicacion_id}', lote='{lote}', skip={skip}, limit={limit}"
         )
-        statement = select(self.model)
+        # FIX: Cargamos la relación de la ubicación para que Pydantic pueda leer el nombre
+        statement = select(self.model).options(joinedload(self.model.ubicacion_fisica))
 
         if tipo_item_id:
             statement = statement.where(self.model.tipo_item_id == tipo_item_id)
-        if ubicacion:
-            statement = statement.where(self.model.ubicacion.ilike(f"%{ubicacion}%"))
+        if ubicacion_id:
+            statement = statement.where(self.model.ubicacion_id == ubicacion_id)
         if lote:
             # Usamos 'ilike' para búsquedas case-insensitive y parciales
             statement = statement.where(self.model.lote.ilike(f"%{lote}%"))
 
         statement = (
-            statement.order_by(self.model.ubicacion, self.model.tipo_item_id)
+            statement.order_by(self.model.ubicacion_id, self.model.tipo_item_id)
             .offset(skip)
             .limit(limit)
         )
@@ -56,18 +57,18 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
         return list(result.scalars().all())
     
     def get_stock_record(
-        self, db: Session, *, tipo_item_id: UUID, ubicacion: str, lote: Optional[str] = None
+        self, db: Session, *, tipo_item_id: UUID, ubicacion_id: UUID, lote: Optional[str] = None
     ) -> Optional[InventarioStock]:
         """
         Obtiene un registro de stock específico por item, ubicación y lote.
         """
         lote_a_buscar = lote if lote is not None else 'N/A'
         
-        logger.debug(f"Buscando stock: TipoItem ID {tipo_item_id}, Ubicación '{ubicacion}', Lote '{lote_a_buscar}'")
+        logger.debug(f"Buscando stock: TipoItem ID {tipo_item_id}, Ubicación ID '{ubicacion_id}', Lote '{lote_a_buscar}'")
         
-        statement = select(self.model).where(
+        statement = select(self.model).options(joinedload(self.model.ubicacion_fisica)).where(
             self.model.tipo_item_id == tipo_item_id,
-            self.model.ubicacion == ubicacion,
+            self.model.ubicacion_id == ubicacion_id,
             self.model.lote == lote_a_buscar
         )
         result = db.execute(statement)
@@ -80,8 +81,9 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
         logger.debug(f"Listando stock para TipoItem ID: {tipo_item_id} (skip: {skip}, limit: {limit}).")
         statement = (
             select(self.model)
+            .options(joinedload(self.model.ubicacion_fisica))
             .where(self.model.tipo_item_id == tipo_item_id)
-            .order_by(self.model.ubicacion, self.model.lote)
+            .order_by(self.model.ubicacion_id, self.model.lote)
             .offset(skip)
             .limit(limit)
         )
@@ -89,13 +91,14 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
         return list(result.scalars().all())
 
     def get_stock_by_location(
-        self, db: Session, *, ubicacion: str, skip: int = 0, limit: int = 100
+        self, db: Session, *, ubicacion_id: UUID, skip: int = 0, limit: int = 100
     ) -> List[InventarioStock]:
         """Obtiene todos los registros de stock para una ubicación."""
-        logger.debug(f"Listando stock para Ubicación: '{ubicacion}' (skip: {skip}, limit: {limit}).")
+        logger.debug(f"Listando stock para Ubicación ID: '{ubicacion_id}' (skip: {skip}, limit: {limit}).")
         statement = (
             select(self.model)
-            .where(self.model.ubicacion == ubicacion)
+            .options(joinedload(self.model.ubicacion_fisica))
+            .where(self.model.ubicacion_id == ubicacion_id)
             .order_by(self.model.tipo_item_id, self.model.lote)
             .offset(skip)
             .limit(limit)
@@ -137,11 +140,11 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No se proporcionaron campos válidos para actualizar.")
 
         if "lote" in fields_to_update and fields_to_update["lote"] != stock_record.lote:
-            logger.debug(f"Validando nuevo lote '{fields_to_update['lote']}' para stock ID {stock_id} (Item ID: {stock_record.tipo_item_id}, Ubicación: '{stock_record.ubicacion}')")
+            logger.debug(f"Validando nuevo lote '{fields_to_update['lote']}' para stock ID {stock_id} (Item ID: {stock_record.tipo_item_id}, Ubicación ID: '{stock_record.ubicacion_id}')")
             existing_with_new_lote = self.get_stock_record(
                 db,
                 tipo_item_id=stock_record.tipo_item_id,
-                ubicacion=stock_record.ubicacion,
+                ubicacion_id=stock_record.ubicacion_id,
                 lote=fields_to_update["lote"]
             )
             if existing_with_new_lote and existing_with_new_lote.id != stock_id:

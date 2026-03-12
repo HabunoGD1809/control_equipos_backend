@@ -201,17 +201,17 @@ def read_inventario_stock(
     db: Session = Depends(deps.get_db),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=200),
-    ubicacion: Optional[str] = Query(None, description="Filtrar por ubicación específica"),
+    ubicacion_id: Optional[PyUUID] = Query(None, description="Filtrar por ID de ubicación específica"), # FIX: Ahora es UUID
     lote: Optional[str] = Query(None, description="Filtrar por lote específico"),
     tipo_item_id: Optional[PyUUID] = Query(None, description="Filtrar por ID de tipo de item"),
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
-    logger.info(f"Usuario '{current_user.nombre_usuario}' consultando stock con filtros: ubicacion='{ubicacion}', lote='{lote}', tipo_item_id='{tipo_item_id}'.")
+    logger.info(f"Usuario '{current_user.nombre_usuario}' consultando stock con filtros: ubicacion_id='{ubicacion_id}', lote='{lote}', tipo_item_id='{tipo_item_id}'.")
     
     stock_records = inventario_stock_service.get_multi_by_filters(
         db,
         tipo_item_id=tipo_item_id,
-        ubicacion=ubicacion,
+        ubicacion_id=ubicacion_id, # FIX
         lote=lote,
         skip=skip,
         limit=limit
@@ -297,11 +297,11 @@ def create_inventario_movimiento(
         f"tipo '{tipo_mov_valor}' para TipoItem ID {movimiento_in.tipo_item_id}."
     )
 
-    if movimiento_in.tipo_movimiento.es_salida() and movimiento_in.ubicacion_origen:
+    if movimiento_in.tipo_movimiento.es_salida() and movimiento_in.ubicacion_origen_id: # FIX: Usamos _id
         stock_origen = inventario_stock_service.get_stock_record(
             db,
             tipo_item_id=movimiento_in.tipo_item_id,
-            ubicacion=movimiento_in.ubicacion_origen,
+            ubicacion_id=movimiento_in.ubicacion_origen_id, # FIX: Usamos _id
             lote=movimiento_in.lote_origen
         )
         
@@ -310,13 +310,13 @@ def create_inventario_movimiento(
         if stock_disponible < movimiento_in.cantidad:
             logger.warning(
                 f"Intento de registrar salida con stock insuficiente. "
-                f"Item: {movimiento_in.tipo_item_id}, Ubicación: {movimiento_in.ubicacion_origen}, "
+                f"Item: {movimiento_in.tipo_item_id}, Ubicación ID: {movimiento_in.ubicacion_origen_id}, "
                 f"Requerido: {movimiento_in.cantidad}, Disponible: {stock_disponible}"
             )
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
-                    f"Stock insuficiente en '{movimiento_in.ubicacion_origen}'. "
+                    f"Stock insuficiente en la ubicación de origen. "
                     f"Se requieren {movimiento_in.cantidad} unidades, pero solo hay {stock_disponible} disponibles."
                 ),
             )
@@ -381,7 +381,7 @@ def read_inventario_movimientos(
     mantenimiento_id: Optional[PyUUID] = Query(None, description="Filtrar por ID de mantenimiento asociado"),
     usuario_id: Optional[PyUUID] = Query(None, description="Filtrar por ID de usuario que registró"),
     tipo_movimiento: Optional[str] = Query(None, description="Filtrar por tipo de movimiento (valor string del Enum)"),
-    ubicacion: Optional[str] = Query(None, description="Filtrar por ubicación (origen o destino)"),
+    ubicacion_id: Optional[PyUUID] = Query(None, description="Filtrar por ID de ubicación (origen o destino)"), # FIX: UUID
     start_date: Optional[datetime] = Query(None, description="Fecha de inicio para filtrar movimientos (YYYY-MM-DDTHH:MM:SS)"),
     end_date: Optional[datetime] = Query(None, description="Fecha de fin para filtrar movimientos (YYYY-MM-DDTHH:MM:SS)"),
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
@@ -393,7 +393,7 @@ def read_inventario_movimientos(
         skip=skip,
         limit=limit,
         tipo_item_id=tipo_item_id,
-        ubicacion=ubicacion,
+        ubicacion_id=ubicacion_id, # FIX: Paso el ID en vez del nombre
         tipo_movimiento=tipo_movimiento,
         start_date=start_date,
         end_date=end_date,

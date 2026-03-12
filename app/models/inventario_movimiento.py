@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from .equipo import Equipo
     from .mantenimiento import Mantenimiento
     from .usuario import Usuario
+    from .ubicacion import Ubicacion
 
 
 class InventarioMovimiento(Base):
@@ -28,8 +29,10 @@ class InventarioMovimiento(Base):
     tipo_item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tipos_item_inventario.id", ondelete="RESTRICT"), index=True)
     tipo_movimiento: Mapped[str] = mapped_column(String(50), index=True)
     cantidad: Mapped[int] = mapped_column(Integer)
-    ubicacion_origen: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
-    ubicacion_destino: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    
+    ubicacion_origen_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("ubicaciones.id", ondelete="SET NULL"), nullable=True, index=True)
+    ubicacion_destino_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("ubicaciones.id", ondelete="SET NULL"), nullable=True, index=True)
+    
     lote_origen: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     lote_destino: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     equipo_asociado_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("equipos.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -59,10 +62,13 @@ class InventarioMovimiento(Base):
     )
     usuario_registrador: Mapped[Optional["Usuario"]] = relationship(
         "Usuario",
-        foreign_keys=[usuario_id], # Especificar aquí si hay ambigüedad
+        foreign_keys=[usuario_id],
         back_populates="movimientos_inventario_registrados",
         lazy="selectin"
     )
+    
+    origen: Mapped[Optional["Ubicacion"]] = relationship("Ubicacion", foreign_keys=[ubicacion_origen_id], lazy="selectin")
+    destino: Mapped[Optional["Ubicacion"]] = relationship("Ubicacion", foreign_keys=[ubicacion_destino_id], lazy="selectin")
 
     def __repr__(self) -> str:
         return f"<InventarioMovimiento(id={self.id}, tipo='{self.tipo_movimiento}', item_id={self.tipo_item_id}, cantidad={self.cantidad})>"

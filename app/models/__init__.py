@@ -1,5 +1,3 @@
-# from app.db.base import Base
-
 from .audit_log import AuditLog
 from .asignacion_licencia import AsignacionLicencia
 from .backup_log import BackupLog
@@ -25,6 +23,8 @@ from .tipo_item_inventario import TipoItemInventario
 from .tipo_mantenimiento import TipoMantenimiento
 from .usuario import Usuario
 from .refresh_token import RefreshToken
+from .ubicacion import Ubicacion
+from .reporte import Reporte
 
 
 __all__ = [
@@ -54,4 +54,6 @@ __all__ = [
     "TipoMantenimiento",
     "Usuario",
     "RefreshToken",
+    "Ubicacion",
+    "Reporte",
 ]

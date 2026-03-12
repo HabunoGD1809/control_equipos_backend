@@ -4,9 +4,10 @@ from uuid import UUID as PyUUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError # Importar IntegrityError para manejo específico
+from sqlalchemy.exc import IntegrityError
 
 from app.api import deps
+from app.core import permissions as perms
 from app.schemas.proveedor import Proveedor, ProveedorCreate, ProveedorUpdate
 from app.schemas.common import Msg
 from app.services.proveedor import proveedor_service
@@ -16,16 +17,14 @@ from app.models.equipo import Equipo
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Permisos actualizados
-PERM_GESTIONAR_PROVEEDORES = "administrar_catalogos" # Cambiado de administrar_proveedores
-PERM_VER_PROVEEDORES = "ver_proveedores" # Este ya estaba bien
-
-@router.post("/",
-             response_model=Proveedor,
-             status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([PERM_GESTIONAR_PROVEEDORES]))], # Usar el permiso actualizado
-             summary="Crear un nuevo Proveedor",
-             response_description="El proveedor creado.")
+@router.post(
+    "/",
+    response_model=Proveedor,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
+    summary="Crear un nuevo Proveedor",
+    response_description="El proveedor creado."
+)
 def create_proveedor(
     *,
     db: Session = Depends(deps.get_db),
@@ -53,7 +52,7 @@ def create_proveedor(
         if "proveedores_nombre_key" in error_detail or "uq_proveedores_nombre" in error_detail:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Conflicto: Ya existe un proveedor con el nombre '{proveedor_in.nombre}'.")
         if "proveedores_rnc_key" in error_detail or "uq_proveedores_rnc" in error_detail:
-             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Conflicto: Ya existe un proveedor con el RNC '{proveedor_in.rnc}'.")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Conflicto: Ya existe un proveedor con el RNC '{proveedor_in.rnc}'.")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al crear el proveedor.")
     except Exception as e:
         db.rollback()
@@ -61,11 +60,13 @@ def create_proveedor(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al crear el proveedor.")
 
 
-@router.get("/",
-            response_model=List[Proveedor],
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_PROVEEDORES]))], # Solo se necesita ver_proveedores
-            summary="Listar Proveedores",
-            response_description="Una lista de proveedores.")
+@router.get(
+    "/",
+    response_model=List[Proveedor],
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_PROVEEDORES]))],
+    summary="Listar Proveedores",
+    response_description="Una lista de proveedores."
+)
 def read_proveedores(
     db: Session = Depends(deps.get_db),
     skip: int = 0,
@@ -75,15 +76,16 @@ def read_proveedores(
     Obtiene una lista de proveedores.
     Requiere el permiso: `ver_proveedores`.
     """
-    proveedores = proveedor_service.get_multi(db, skip=skip, limit=limit)
-    return proveedores
+    return proveedor_service.get_multi(db, skip=skip, limit=limit)
 
 
-@router.get("/{proveedor_id}",
-            response_model=Proveedor,
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_PROVEEDORES]))], # Solo se necesita ver_proveedores
-            summary="Obtener un Proveedor por ID",
-            response_description="Información detallada del proveedor.")
+@router.get(
+    "/{proveedor_id}",
+    response_model=Proveedor,
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_PROVEEDORES]))],
+    summary="Obtener un Proveedor por ID",
+    response_description="Información detallada del proveedor."
+)
 def read_proveedor_by_id(
     proveedor_id: PyUUID,
     db: Session = Depends(deps.get_db),
@@ -92,15 +94,16 @@ def read_proveedor_by_id(
     Obtiene la información de un proveedor específico por su ID.
     Requiere el permiso: `ver_proveedores`.
     """
-    proveedor = proveedor_service.get_or_404(db, id=proveedor_id)
-    return proveedor
+    return proveedor_service.get_or_404(db, id=proveedor_id)
 
 
-@router.put("/{proveedor_id}",
-            response_model=Proveedor,
-            dependencies=[Depends(deps.PermissionChecker([PERM_GESTIONAR_PROVEEDORES]))], # Usar el permiso actualizado
-            summary="Actualizar un Proveedor",
-            response_description="Información actualizada del proveedor.")
+@router.put(
+    "/{proveedor_id}",
+    response_model=Proveedor,
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
+    summary="Actualizar un Proveedor",
+    response_description="Información actualizada del proveedor."
+)
 def update_proveedor(
     *,
     db: Session = Depends(deps.get_db),
@@ -134,17 +137,19 @@ def update_proveedor(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Conflicto: Ya existe un proveedor con el RNC proporcionado.")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error de base de datos al actualizar el proveedor.")
     except Exception as e:
-         db.rollback()
-         logger.error(f"Error inesperado actualizando proveedor ID {proveedor_id}: {e}", exc_info=True)
-         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al actualizar el proveedor.")
+        db.rollback()
+        logger.error(f"Error inesperado actualizando proveedor ID {proveedor_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al actualizar el proveedor.")
 
 
-@router.delete("/{proveedor_id}",
-               response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_GESTIONAR_PROVEEDORES]))],
-               status_code=status.HTTP_200_OK,
-               summary="Eliminar un Proveedor",
-               response_description="Mensaje de confirmación.")
+@router.delete(
+    "/{proveedor_id}",
+    response_model=Msg,
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
+    status_code=status.HTTP_200_OK,
+    summary="Eliminar un Proveedor",
+    response_description="Mensaje de confirmación."
+)
 def delete_proveedor(
     *,
     db: Session = Depends(deps.get_db),
@@ -160,7 +165,6 @@ def delete_proveedor(
     proveedor_db = proveedor_service.get_or_404(db, id=proveedor_id)
     proveedor_nombre_para_log = proveedor_db.nombre
 
-    # CORRECCIÓN: Añadir validación manual de integridad
     equipos_asociados = db.query(Equipo).filter(Equipo.proveedor_id == proveedor_id).first()
     if equipos_asociados:
         logger.warning(f"Intento de eliminar proveedor '{proveedor_nombre_para_log}' que está asociado al equipo ID {equipos_asociados.id}.")
@@ -169,7 +173,6 @@ def delete_proveedor(
             detail=f"No se puede eliminar el proveedor '{proveedor_nombre_para_log}' porque está asociado a uno o más equipos."
         )
 
-    # Si pasa la validación, proceder con la eliminación
     try:
         proveedor_service.remove(db=db, id=proveedor_id)
         db.commit()

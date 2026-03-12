@@ -7,7 +7,7 @@ from sqlalchemy import select, text, exc as sqlalchemy_exc
 from fastapi import HTTPException, status
 import logging
 
-from app.schemas.enums import TipoMovimientoEquipoEnum
+from app.schemas.enums import TipoMovimientoEquipoEnum, EstadoMovimientoEquipoEnum
 
 try:
     from psycopg import errors as psycopg_errors
@@ -19,7 +19,7 @@ except ImportError:
 
 from app.models.movimiento import Movimiento
 from app.models.usuario import Usuario
-from app.schemas.movimiento import MovimientoCreate, MovimientoUpdate
+from app.schemas.movimiento import MovimientoCreate, MovimientoUpdate, MovimientoEstadoUpdate
 from .base_service import BaseService
 
 logger = logging.getLogger(__name__)
@@ -58,11 +58,12 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
         *,
         obj_in: MovimientoCreate,
         registrado_por_usuario: Usuario,
+        ip_origen: Optional[str] = None,
+        user_agent: Optional[str] = None,
         autorizado_por_id: Optional[UUID] = None
     ) -> Movimiento:
         """
         Crea un nuevo movimiento LLAMANDO a la función de base de datos 'registrar_movimiento_equipo'.
-        Esta función ahora maneja la lógica de bloqueo para evitar race conditions.
         NO realiza db.commit().
         """
         logger.info(f"Usuario '{registrado_por_usuario.nombre_usuario}' intentando registrar movimiento tipo '{obj_in.tipo_movimiento}' para equipo ID '{obj_in.equipo_id}'.")
@@ -105,23 +106,27 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
             nuevo_movimiento_id = result.scalar_one_or_none()
 
             if nuevo_movimiento_id is None:
-                logger.error("Error al registrar el movimiento: La función de BD no devolvió un ID.")
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Error interno al registrar el movimiento: no se obtuvo ID de la función de base de datos.",
                 )
             
-            db_movimiento = self.get(db, id=nuevo_movimiento_id)
+            # --- Inyectar Auditoría de Red directamente tras crear ---
+            db_movimiento = db.query(Movimiento).filter(Movimiento.id == nuevo_movimiento_id).first()
+            if db_movimiento:
+                db_movimiento.ip_origen = ip_origen
+                db_movimiento.user_agent = user_agent
+                db.add(db_movimiento)
             
-            if not db_movimiento:
-                logger.error(f"Error crítico: Movimiento con ID {nuevo_movimiento_id} no encontrado después de ser creado por la función de BD.")
+            db_movimiento_full = self.get(db, id=nuevo_movimiento_id)
+            
+            if not db_movimiento_full:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail="Error crítico al recuperar el movimiento registrado después de su creación.",
                 )
             
-            logger.info(f"Movimiento ID {nuevo_movimiento_id} preparado para ser creado (registrado vía función DB).")
-            return db_movimiento
+            return db_movimiento_full
 
         except sqlalchemy_exc.DBAPIError as db_err:
             original_exc = getattr(db_err, 'orig', None)
@@ -158,7 +163,6 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
     ) -> Movimiento:
         update_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
         mov_id = db_obj.id
-        logger.debug(f"Intentando actualizar movimiento ID {mov_id} con datos: {update_data}")
         
         if db_obj.estado == "Cancelado":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No se pueden modificar movimientos cancelados.")
@@ -169,53 +173,86 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
                 if field not in allowed_fields:
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
-                        detail=f"No se pueden modificar el campo '{field}' de un movimiento en estado 'Completado'."
+                        detail=f"No se puede modificar el campo '{field}' de un movimiento en estado 'Completado'."
                     )
         
         allowed_update_fields = ["observaciones", "fecha_retorno", "recibido_por"]
         filtered_update_data = {k: v for k, v in update_data.items() if k in allowed_update_fields}
 
         if not filtered_update_data:
-            logger.info(f"No hay campos válidos para actualizar en movimiento ID {mov_id}. Devolviendo objeto sin cambios.")
             return db_obj
 
         if "fecha_retorno" in filtered_update_data and filtered_update_data["fecha_retorno"]:
             if filtered_update_data["fecha_retorno"] < db_obj.fecha_hora:
                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La fecha de retorno no puede ser anterior a la fecha del movimiento.")
 
-        updated_db_movimiento = super().update(db, db_obj=db_obj, obj_in=filtered_update_data)
-        logger.info(f"Movimiento ID {mov_id} preparado para ser actualizado.")
-        return updated_db_movimiento
+        return super().update(db, db_obj=db_obj, obj_in=filtered_update_data)
+
+    def cambiar_estado(
+        self, db: Session, *, movimiento: Movimiento, obj_in: MovimientoEstadoUpdate, current_user: Usuario
+    ) -> Movimiento:
+        """
+        NUEVO: La Máquina de Estados para procesar autorizaciones, rechazos y recepciones (Handoffs).
+        """
+        mov_id = movimiento.id
+        estado_nuevo = obj_in.estado
+        
+        # 1. Validar transiciones prohibidas
+        estados_finales = ["Completado", "Cancelado", "Rechazado"]
+        if movimiento.estado in estados_finales:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"No se puede cambiar el estado de un movimiento que ya está '{movimiento.estado}'."
+            )
+
+        update_data = {"estado": estado_nuevo.value if hasattr(estado_nuevo, 'value') else estado_nuevo}
+        
+        # 2. Lógica específica por estado
+        if estado_nuevo == EstadoMovimientoEquipoEnum.AUTORIZADO:
+            update_data: Dict[str, Any] = {
+            "estado": estado_nuevo.value if hasattr(estado_nuevo, 'value') else estado_nuevo
+        }
+            
+        elif estado_nuevo == EstadoMovimientoEquipoEnum.RECHAZADO:
+            if not obj_in.observaciones:
+                raise HTTPException(status_code=422, detail="Debe proporcionar un motivo (observaciones) al rechazar.")
+
+        # 3. Concatenar Observaciones limpiamente
+        if obj_in.observaciones:
+            obs_actual = movimiento.observaciones or ""
+            prefijo = f"[{estado_nuevo.value.upper()}] " if hasattr(estado_nuevo, 'value') else f"[{str(estado_nuevo).upper()}] "
+            fecha_str = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M')
+            nota_formateada = f"{prefijo}- {current_user.nombre_usuario} ({fecha_str}): {obj_in.observaciones}"
+            
+            update_data["observaciones"] = f"{obs_actual}\n{nota_formateada}".strip()
+
+        updated_movimiento = super().update(db, db_obj=movimiento, obj_in=update_data)
+        logger.info(f"Movimiento ID {mov_id} cambió a estado '{estado_nuevo}' por '{current_user.nombre_usuario}'.")
+        return updated_movimiento
 
     def cancel_movimiento(self, db: Session, *, movimiento: Movimiento, current_user: Usuario) -> Movimiento:
         mov_id = movimiento.id
-        logger.warning(f"Usuario '{current_user.nombre_usuario}' intentando cancelar movimiento ID: {mov_id}")
-
-        cancelables_states = ['Pendiente', 'Autorizado', 'Programado']
+        cancelables_states = ['Pendiente', 'Autorizado', 'En Proceso']
 
         if movimiento.estado not in cancelables_states:
-            logger.warning(f"Intento de cancelar movimiento ID {mov_id} en estado no permitido: '{movimiento.estado}'.")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"No se puede cancelar un movimiento en estado '{movimiento.estado}'."
             )
         
-        cancel_notes = f"Cancelado por {current_user.nombre_usuario} el {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S %Z')}."
-        new_observaciones = f"{movimiento.observaciones or ''} ({cancel_notes})".strip()
+        cancel_notes = f"Cancelado por {current_user.nombre_usuario} el {datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}."
+        new_observaciones = f"{movimiento.observaciones or ''}\n[CANCELADO] {cancel_notes}".strip()
 
         update_data = {
             "estado": "Cancelado",
             "observaciones": new_observaciones,
         }
         
-        updated_movimiento = super().update(db, db_obj=movimiento, obj_in=update_data)
-        logger.info(f"Movimiento ID {mov_id} preparado para ser cancelado (estado cambiado a 'Cancelado').")
-        return updated_movimiento
+        return super().update(db, db_obj=movimiento, obj_in=update_data)
 
     def get_multi_by_equipo(
         self, db: Session, *, equipo_id: UUID, skip: int = 0, limit: int = 100
     ) -> List[Movimiento]:
-        logger.debug(f"Listando movimientos para equipo ID: {equipo_id} (skip: {skip}, limit: {limit}).")
         statement = (
             select(self.model)
             .where(self.model.equipo_id == equipo_id)

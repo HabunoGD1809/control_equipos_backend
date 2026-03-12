@@ -14,6 +14,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from .tipo_item_inventario import TipoItemInventario
+    from .ubicacion import Ubicacion
 
 
 class InventarioStock(Base):
@@ -22,12 +23,14 @@ class InventarioStock(Base):
     """
     __tablename__ = "inventario_stock"
     __table_args__ = (
-        UniqueConstraint('tipo_item_id', 'ubicacion', 'lote', name='uq_item_ubicacion_lote'),
+        UniqueConstraint('tipo_item_id', 'ubicacion_id', 'lote', name='uq_item_ubicacion_lote'),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tipo_item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tipos_item_inventario.id", ondelete="CASCADE"), index=True)
-    ubicacion: Mapped[str] = mapped_column(String(255), default='Almacén Principal', index=True)
+    
+    ubicacion_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("ubicaciones.id", ondelete="RESTRICT"), index=True)
+    
     lote: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     fecha_caducidad: Mapped[Optional[date]] = mapped_column(Date, nullable=True, index=True)
     cantidad_actual: Mapped[int] = mapped_column(Integer, default=0)
@@ -39,7 +42,14 @@ class InventarioStock(Base):
         back_populates="stock_ubicaciones",
         lazy="joined"
     )
+    
+    # Relación hacia la entidad Ubicacion
+    ubicacion_fisica: Mapped["Ubicacion"] = relationship(
+        "Ubicacion",
+        back_populates="stock",
+        lazy="joined"
+    )
 
     def __repr__(self) -> str:
         lote_str = f", lote='{self.lote}'" if self.lote else ""
-        return f"<InventarioStock(item_id={self.tipo_item_id}, ubicacion='{self.ubicacion}'{lote_str}, cantidad={self.cantidad_actual})>"
+        return f"<InventarioStock(item_id={self.tipo_item_id}, ubicacion_id='{self.ubicacion_id}'{lote_str}, cantidad={self.cantidad_actual})>"

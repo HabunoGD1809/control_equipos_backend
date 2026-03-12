@@ -33,7 +33,9 @@ class Movimiento(Base):
     recibido_por: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     observaciones: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     estado: Mapped[str] = mapped_column(String(50), default='Completado', index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())    
+    ip_origen: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     equipo: Mapped["Equipo"] = relationship(
         "Equipo",
@@ -54,4 +56,4 @@ class Movimiento(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Movimiento(id={self.id}, equipo_id={self.equipo_id}, tipo='{self.tipo_movimiento}')>"
+        return f"<Movimiento(id={self.id}, equipo_id={self.equipo_id}, tipo='{self.tipo_movimiento}', estado='{self.estado}')>"

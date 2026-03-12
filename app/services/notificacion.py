@@ -4,7 +4,8 @@ from uuid import UUID
 from datetime import datetime, timezone 
 
 from sqlalchemy.orm import Session
-from sqlalchemy import select, update, func as sql_func 
+from sqlalchemy import select, update, func as sql_func
+from sqlalchemy.engine import CursorResult
 
 from app.models.notificacion import Notificacion
 from app.schemas.notificacion import NotificacionUpdate, NotificacionCreateInternal
@@ -38,7 +39,6 @@ class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, 
         logger.info(f"Marcando notificación ID {notif_id} como leido={read_status}.")
         update_values = {
             "leido": read_status,
-            # Corrección aquí:
             "fecha_leido": datetime.now(timezone.utc) if read_status else None
         }
         
@@ -50,17 +50,16 @@ class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, 
         return db_obj
 
     def mark_all_as_read_for_user(self, db: Session, *, usuario_id: UUID) -> int:
-         logger.info(f"Marcando todas las notificaciones no leídas como leídas para Usuario ID: {usuario_id}.")
-         statement = (
-             update(self.model)
-             .where(self.model.usuario_id == usuario_id, self.model.leido == False) # type: ignore
-             # Corrección aquí:
-             .values(leido=True, fecha_leido=datetime.now(timezone.utc))
-         )
-         result = db.execute(statement)
-         affected_rows = result.rowcount
-         logger.info(f"{affected_rows} notificación(es) para Usuario ID {usuario_id} preparadas para ser marcadas como leídas.")
-         return affected_rows
+        logger.info(f"Marcando todas las notificaciones no leídas como leídas para Usuario ID: {usuario_id}.")
+        statement = (
+            update(self.model)
+            .where(self.model.usuario_id == usuario_id, self.model.leido == False) # type: ignore
+            .values(leido=True, fecha_leido=datetime.now(timezone.utc))
+        )
+        result: CursorResult = db.execute(statement)  # type: ignore
+        affected_rows = result.rowcount
+        logger.info(f"{affected_rows} notificación(es) para Usuario ID {usuario_id} preparadas para ser marcadas como leídas.")
+        return affected_rows
 
     def get_multi_by_user(
         self, db: Session, *, usuario_id: UUID, solo_no_leidas: bool = False, skip: int = 0, limit: int = 50
@@ -76,9 +75,9 @@ class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, 
     def get_unread_count_by_user(self, db: Session, *, usuario_id: UUID) -> int:
         logger.debug(f"Contando notificaciones no leídas para Usuario ID: {usuario_id}.")
         statement = select(sql_func.count(self.model.id)).where( # type: ignore
-             self.model.usuario_id == usuario_id, # type: ignore
-             self.model.leido == False # type: ignore
-         )
+            self.model.usuario_id == usuario_id, # type: ignore
+            self.model.leido == False # type: ignore
+        )
         result = db.execute(statement)
         count = result.scalar_one_or_none()
         return count or 0

@@ -1,8 +1,9 @@
 import logging
+import time
 from typing import Any, List
 from uuid import UUID as PyUUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -10,8 +11,8 @@ from app.api import deps
 from app.schemas import Usuario, UsuarioCreate, UsuarioUpdate, Msg
 from app.services.usuario import usuario_service
 from app.models import Usuario as UsuarioModel
-
 from app.core import permissions as perms
+from app.core.storage import upload_avatar
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -40,7 +41,7 @@ def create_usuario(
         user = usuario_service.create(db=db, obj_in=user_in)
         db.commit()
         db.refresh(user)
-        db.refresh(user, attribute_names=['rol']) # Cargar explícitamente la relación de rol
+        db.refresh(user, attribute_names=['rol'])
         
         logger.info(f"Usuario '{user.nombre_usuario}' (ID: {user.id}) creado exitosamente por '{current_user.nombre_usuario}'.")
         return user
@@ -50,8 +51,6 @@ def create_usuario(
         raise http_exc
     except IntegrityError as e:
         db.rollback()
-        # Este bloque maneja errores de la base de datos, como duplicados.
-        # El servicio ya debería haber validado esto, pero es una salvaguarda.
         error_detail = str(getattr(e, 'orig', e)).lower()
         if "usuarios_nombre_usuario_key" in error_detail or "uq_usuarios_nombre_usuario" in error_detail:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Ya existe un usuario con ese nombre de usuario.")
@@ -121,6 +120,54 @@ def update_usuario_me(
         db.rollback()
         logger.error(f"Error inesperado actualizando perfil de '{current_user.nombre_usuario}': {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al actualizar el perfil.")
+
+
+@router.post(
+    "/me/avatar",
+    response_model=Usuario,
+    summary="Subir o actualizar foto de perfil",
+    response_description="Usuario con la nueva URL de avatar."
+)
+async def update_avatar_me(
+    file: UploadFile = File(...),
+    db: Session = Depends(deps.get_db),
+    current_user: UsuarioModel = Depends(deps.get_current_active_user)
+) -> Any:
+    """
+    Sube una nueva foto de perfil a S3/MinIO.
+    Reemplaza la imagen anterior para ahorrar espacio y retorna la URL con un timestamp 
+    (Cache-Buster) para que el Frontend refresque la imagen inmediatamente.
+    """
+    logger.info(f"Usuario '{current_user.nombre_usuario}' subiendo nueva foto de perfil.")
+    
+    # 1. Validar tamaño (Max 5MB)
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    if file_size > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="El archivo excede el límite de 5MB.")
+
+    try:
+        # 2. Subir al Cloud Storage
+        base_url = await upload_avatar(file, str(current_user.id))
+
+        # 3. Burlar la caché del navegador/App
+        timestamp = int(time.time())
+        url_with_cache_buster = f"{base_url}?v={timestamp}"
+        
+        # 4. Actualizar usuario en DB
+        update_data = {"avatar_url": url_with_cache_buster}
+        updated_user = usuario_service.update(db=db, db_obj=current_user, obj_in=update_data)
+        
+        db.commit()
+        db.refresh(updated_user)
+        return updated_user
+        
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.error(f"Error subiendo avatar: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Ocurrió un error al procesar la imagen.")
 
 
 @router.get(
@@ -207,6 +254,7 @@ def update_usuario(
         db.rollback()
         logger.error(f"Error inesperado actualizando usuario ID {user_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al actualizar usuario.")
+
 
 @router.delete(
     "/{user_id}",

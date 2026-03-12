@@ -8,27 +8,23 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
 from sqlalchemy.orm import Session
 
 from app.api import deps
+from app.core import permissions as perms
 from app.schemas.mantenimiento import Mantenimiento, MantenimientoCreate, MantenimientoUpdate
 from app.schemas.common import Msg
 from app.services.mantenimiento import mantenimiento_service
 from app.models.usuario import Usuario as UsuarioModel
 
-PERM_VER_MANTENIMIENTOS = "ver_mantenimientos"
-PERM_PROGRAMAR_MANTENIMIENTOS = "programar_mantenimientos"
-PERM_EDITAR_MANTENIMIENTOS = "editar_mantenimientos"
-PERM_ELIMINAR_MANTENIMIENTOS = "eliminar_mantenimientos"
-
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-@router.post("/",
-             response_model=Mantenimiento,
-             status_code=status.HTTP_201_CREATED,
-             # ===== INICIO DE LA CORRECCIÓN =====
-             dependencies=[Depends(deps.PermissionChecker([PERM_PROGRAMAR_MANTENIMIENTOS]))],
-             # ===== FIN DE LA CORRECCIÓN =====
-             summary="Programar un Nuevo Mantenimiento",
-             )
+
+@router.post(
+    "/",
+    response_model=Mantenimiento,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_PROGRAMAR_MANTENIMIENTOS]))],
+    summary="Programar un Nuevo Mantenimiento"
+)
 def create_mantenimiento(
     *,
     db: Session = Depends(deps.get_db),
@@ -44,7 +40,7 @@ def create_mantenimiento(
         mantenimiento = mantenimiento_service.create(db=db, obj_in=mantenimiento_in)
         db.commit()
         db.refresh(mantenimiento)
-        db.refresh(mantenimiento, attribute_names=['equipo', 'tipo_mantenimiento', 'proveedor_servicio']) # Cargar relaciones
+        db.refresh(mantenimiento, attribute_names=['equipo', 'tipo_mantenimiento', 'proveedor_servicio'])
         logger.info(f"Mantenimiento ID {mantenimiento.id} para equipo ID {mantenimiento.equipo_id} creado exitosamente por '{current_user.nombre_usuario}'.")
         return mantenimiento
     except HTTPException as http_exc:
@@ -55,11 +51,13 @@ def create_mantenimiento(
         logger.error(f"Error inesperado creando mantenimiento para equipo ID {mantenimiento_in.equipo_id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al crear el mantenimiento.")
 
-@router.get("/",
-            response_model=List[Mantenimiento],
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_MANTENIMIENTOS]))],
-            summary="Listar Mantenimientos",
-            )
+
+@router.get(
+    "/",
+    response_model=List[Mantenimiento],
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_MANTENIMIENTOS]))],
+    summary="Listar Mantenimientos"
+)
 def read_mantenimientos(
     db: Session = Depends(deps.get_db),
     skip: int = Query(0, ge=0),
@@ -76,7 +74,7 @@ def read_mantenimientos(
     Requiere el permiso: `ver_mantenimientos`.
     """
     logger.info(f"Usuario '{current_user.nombre_usuario}' listando mantenimientos.")
-    mantenimientos = mantenimiento_service.get_multi_with_filters(
+    return mantenimiento_service.get_multi_with_filters(
         db,
         skip=skip,
         limit=limit,
@@ -86,13 +84,14 @@ def read_mantenimientos(
         start_date=start_date,
         end_date=end_date
     )
-    return mantenimientos
 
-@router.get("/{mantenimiento_id}",
-            response_model=Mantenimiento,
-            dependencies=[Depends(deps.PermissionChecker([PERM_VER_MANTENIMIENTOS]))],
-            summary="Obtener Mantenimiento por ID",
-            )
+
+@router.get(
+    "/{mantenimiento_id}",
+    response_model=Mantenimiento,
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_MANTENIMIENTOS]))],
+    summary="Obtener Mantenimiento por ID"
+)
 def read_mantenimiento_by_id(
     mantenimiento_id: PyUUID,
     db: Session = Depends(deps.get_db),
@@ -105,11 +104,13 @@ def read_mantenimiento_by_id(
     logger.info(f"Usuario '{current_user.nombre_usuario}' solicitando mantenimiento ID: {mantenimiento_id}.")
     return mantenimiento_service.get_or_404(db, id=mantenimiento_id)
 
-@router.put("/{mantenimiento_id}",
-            response_model=Mantenimiento,
-            dependencies=[Depends(deps.PermissionChecker([PERM_EDITAR_MANTENIMIENTOS]))],
-            summary="Actualizar un Mantenimiento",
-            )
+
+@router.put(
+    "/{mantenimiento_id}",
+    response_model=Mantenimiento,
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_EDITAR_MANTENIMIENTOS]))],
+    summary="Actualizar un Mantenimiento"
+)
 def update_mantenimiento(
     *,
     db: Session = Depends(deps.get_db),
@@ -139,12 +140,13 @@ def update_mantenimiento(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al actualizar el mantenimiento.")
 
 
-@router.delete("/{mantenimiento_id}",
-               response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([PERM_ELIMINAR_MANTENIMIENTOS]))],
-               status_code=status.HTTP_200_OK,
-               summary="Eliminar un Mantenimiento",
-               )
+@router.delete(
+    "/{mantenimiento_id}",
+    response_model=Msg,
+    dependencies=[Depends(deps.PermissionChecker([perms.PERM_ELIMINAR_MANTENIMIENTOS]))],
+    status_code=status.HTTP_200_OK,
+    summary="Eliminar un Mantenimiento"
+)
 def delete_mantenimiento(
     *,
     db: Session = Depends(deps.get_db),

@@ -1,8 +1,8 @@
 import uuid
-from typing import Optional
+from typing import Any, Optional
 from datetime import datetime
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, computed_field
 
 from .enums import TipoMovimientoEquipoEnum, EstadoMovimientoEquipoEnum
 from .equipo import EquipoSimple
@@ -14,8 +14,8 @@ class MovimientoBase(BaseModel):
     equipo_id: uuid.UUID = Field(..., description="ID del equipo que se mueve")
     tipo_movimiento: TipoMovimientoEquipoEnum = Field(..., description="Tipo de movimiento realizado.")
     fecha_prevista_retorno: Optional[datetime] = Field(None, description="Fecha prevista de retorno (para Salida Temporal)")
-    origen: Optional[str] = Field(None, description="Ubicación/Usuario origen")
-    destino: Optional[str] = Field(None, description="Ubicación/Usuario destino")
+    ubicacion_origen_id: Optional[uuid.UUID] = Field(None, description="ID de la ubicación origen")
+    ubicacion_destino_id: Optional[uuid.UUID] = Field(None, description="ID de la ubicación destino")
     proposito: Optional[str] = Field(None, description="Motivo o propósito del movimiento")
     recibido_por: Optional[str] = Field(None, description="Nombre de la persona que recibe físicamente (si aplica)")
     observaciones: Optional[str] = Field(None, description="Notas u observaciones adicionales")
@@ -57,3 +57,19 @@ class Movimiento(MovimientoInDBBase):
     equipo: EquipoSimple
     usuario_registrador: Optional[UsuarioSimple] = None
     usuario_autorizador: Optional[UsuarioSimple] = None
+    
+    ubicacion_origen: Optional[Any] = Field(default=None, exclude=True)
+    ubicacion_destino: Optional[Any] = Field(default=None, exclude=True)
+    
+    # Datos anidados para no depender del frontend
+    @computed_field
+    def ubicacion_origen_nombre(self) -> Optional[str]:
+        if self.ubicacion_origen:
+            return getattr(self.ubicacion_origen, "nombre", None)
+        return None
+
+    @computed_field
+    def ubicacion_destino_nombre(self) -> Optional[str]:
+        if self.ubicacion_destino:
+            return getattr(self.ubicacion_destino, "nombre", None)
+        return None

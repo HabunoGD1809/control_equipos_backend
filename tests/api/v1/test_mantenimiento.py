@@ -312,27 +312,25 @@ async def test_update_mantenimiento_success(
     mant_creado = create_resp.json()
     mant_id = mant_creado["id"]
 
-    # CORRECCIÓN: Se mantiene el valor de 'prioridad' si no se va a cambiar.
     update_schema_1 = MantenimientoUpdate(
         estado=EstadoMantenimientoEnum.EN_PROCESO,
         fecha_inicio=datetime.now(timezone.utc),
         costo_estimado=None,
         costo_real=None,
-        prioridad=mant_creado["prioridad"] # <-- CORRECCIÓN
+        prioridad=mant_creado["prioridad"]
     )
     update_data_1 = jsonable_encoder(update_schema_1.model_dump(exclude_unset=True))
     update_resp_1 = await client.put(f"{settings.API_V1_STR}/mantenimientos/{mant_id}", headers=headers, json=update_data_1)
     assert update_resp_1.status_code == status.HTTP_200_OK, f"Detalle error: {update_resp_1.text}"
     assert update_resp_1.json()["estado"] == "En Proceso"
 
-    # CORRECCIÓN: Igual que en la corrección anterior.
     update_schema_2 = MantenimientoUpdate(
         estado=EstadoMantenimientoEnum.COMPLETADO,
         fecha_finalizacion=datetime.now(timezone.utc) + timedelta(hours=1),
         costo_estimado=None,
         costo_real=Decimal("50.0"),
         observaciones="Todo OK",
-        prioridad=mant_creado["prioridad"] # <-- CORRECCIÓN
+        prioridad=mant_creado["prioridad"]
     )
     update_data_2 = jsonable_encoder(update_schema_2.model_dump(exclude_unset=True))
     update_resp_2 = await client.put(f"{settings.API_V1_STR}/mantenimientos/{mant_id}", headers=headers, json=update_data_2)

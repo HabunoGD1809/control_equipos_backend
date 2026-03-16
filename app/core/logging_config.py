@@ -1,5 +1,6 @@
 import logging
 import sys
+import os
 from logging.handlers import TimedRotatingFileHandler
 from pathlib import Path
 
@@ -17,7 +18,8 @@ def setup_logging():
     
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
-    LOG_FILENAME = LOGS_DIR / "control_equipos.log"
+    component = os.getenv("APP_COMPONENT", "main")
+    LOG_FILENAME = LOGS_DIR / f"control_equipos_{component}.log"
 
     formatter = logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT)
 
@@ -51,4 +53,5 @@ def setup_logging():
     root_logger.info("="*50)
     root_logger.info("Configuración de Logging Inicializada")
     root_logger.info(f"Ruta Base Absoluta: {BASE_DIR}")
+    root_logger.info(f"Componente Activo: {component.upper()}")
     root_logger.info("="*50)

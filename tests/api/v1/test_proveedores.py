@@ -18,7 +18,6 @@ async def test_create_proveedor_success(client: AsyncClient, auth_token_admin: s
     prov_name = f"Proveedor Test Creación {uuid4().hex[:6]}"
     prov_rnc = f"RNC{uuid4().hex[:8]}"
     
-    # CORRECCIÓN: Se envuelve la URL en HttpUrl
     prov_schema = ProveedorCreate(
         nombre=prov_name,
         descripcion="Proveedor de prueba",
@@ -42,7 +41,6 @@ async def test_create_proveedor_no_permission(client: AsyncClient, auth_token_us
     """
     headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     
-    # CORRECCIÓN: Se envuelve la URL en HttpUrl
     prov_schema = ProveedorCreate(
         nombre=f"Prov Forbidden {uuid4().hex[:6]}",
         descripcion="Test",
@@ -60,7 +58,6 @@ async def test_create_proveedor_no_permission(client: AsyncClient, auth_token_us
 async def test_create_proveedor_duplicate_name(client: AsyncClient, auth_token_admin: str, test_proveedor: Proveedor):
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
     
-    # CORRECCIÓN: Se envuelve la URL en HttpUrl
     prov_schema = ProveedorCreate(
         nombre=test_proveedor.nombre,
         rnc=f"RNC{uuid4().hex[:8]}",
@@ -78,7 +75,6 @@ async def test_create_proveedor_duplicate_rnc(client: AsyncClient, auth_token_ad
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
     if not test_proveedor.rnc: pytest.skip("Fixture proveedor no tiene RNC para probar duplicado.")
     
-    # CORRECCIÓN: Se envuelve la URL en HttpUrl
     prov_schema = ProveedorCreate(
         nombre=f"Prov Dup RNC {uuid4().hex[:6]}",
         rnc=test_proveedor.rnc,
@@ -95,7 +91,6 @@ async def test_create_proveedor_duplicate_rnc(client: AsyncClient, auth_token_ad
 async def test_update_proveedor_success(client: AsyncClient, auth_token_admin: str, test_proveedor: Proveedor):
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
     
-    # CORRECCIÓN: Se envuelve la URL en HttpUrl
     update_schema = ProveedorUpdate(
         nombre=f"Prov-Updated-{uuid4().hex[:4]}",
         contacto="Contacto Actualizado",
@@ -110,7 +105,6 @@ async def test_delete_proveedor_success(client: AsyncClient, auth_token_admin: s
     prov_name = f"Proveedor Borrar {uuid4().hex[:6]}"
     prov_rnc = f"RNCBORRAR{uuid4().hex[:6]}"
     
-    # CORRECCIÓN: Se añade el campo 'rnc' que faltaba
     prov_to_delete = Proveedor(
         nombre=prov_name,
         rnc=prov_rnc,

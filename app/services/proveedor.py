@@ -51,15 +51,10 @@ class ProveedorService(BaseService[Proveedor, ProveedorCreate, ProveedorUpdate])
                  detail=f"Ya existe un proveedor con el RNC '{obj_in.rnc}'.",
              )
 
-        # ===== INICIO DE LA CORRECCIÓN =====
-        # jsonable_encoder convierte todos los tipos de Pydantic, incluyendo HttpUrl, a tipos nativos de Python.
         obj_in_data = jsonable_encoder(obj_in)
         
-        # Creamos la instancia del modelo SQLAlchemy directamente con el diccionario de datos ya procesado.
         db_obj = self.model(**obj_in_data)
         db.add(db_obj)
-        # El commit y refresh se manejan en la ruta de la API
-        # ===== FIN DE LA CORRECCIÓN =====
         
         logger.info(f"Proveedor '{db_obj.nombre}' preparado para ser creado.")
         return db_obj

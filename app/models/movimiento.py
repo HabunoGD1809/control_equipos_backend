@@ -11,7 +11,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from .equipo import Equipo
     from .usuario import Usuario
-
+    from .ubicacion import Ubicacion
 
 class Movimiento(Base):
     """
@@ -26,8 +26,10 @@ class Movimiento(Base):
     fecha_hora: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     fecha_prevista_retorno: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     fecha_retorno: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
-    origen: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    destino: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    
+    ubicacion_origen_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("ubicaciones.id", ondelete="SET NULL"), nullable=True, index=True)
+    ubicacion_destino_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("ubicaciones.id", ondelete="SET NULL"), nullable=True, index=True)
+    
     proposito: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     autorizado_por: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True, index=True)
     recibido_por: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -52,6 +54,18 @@ class Movimiento(Base):
         "Usuario",
         foreign_keys=[autorizado_por],
         back_populates="movimientos_autorizados",
+        lazy="selectin"
+    )
+    
+    # Relaciones con Ubicaciones (para JOINs automáticos)
+    ubicacion_origen: Mapped[Optional["Ubicacion"]] = relationship(
+        "Ubicacion",
+        foreign_keys=[ubicacion_origen_id],
+        lazy="selectin"
+    )
+    ubicacion_destino: Mapped[Optional["Ubicacion"]] = relationship(
+        "Ubicacion",
+        foreign_keys=[ubicacion_destino_id],
         lazy="selectin"
     )
 

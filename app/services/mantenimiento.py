@@ -7,19 +7,17 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select, func as sql_func
 from fastapi import HTTPException, status
 
-# Importar modelos y schemas
 from app.models.mantenimiento import Mantenimiento
-from app.models.equipo import Equipo # Usado a través de equipo_service
-from app.models.tipo_mantenimiento import TipoMantenimiento # Usado para join
+from app.models.equipo import Equipo 
+from app.models.tipo_mantenimiento import TipoMantenimiento 
 from app.schemas.mantenimiento import MantenimientoCreate, MantenimientoUpdate
 
-# Importar la clase base y otros servicios necesarios
-from .base_service import BaseService # BaseService ya está modificado
+from .base_service import BaseService 
 from .equipo import equipo_service
 from .tipo_mantenimiento import tipo_mantenimiento_service
-from .proveedor import proveedor_service
+from .tecnico import tecnico_service
 
-logger = logging.getLogger(__name__) # Configurar logger
+logger = logging.getLogger(__name__)
 
 class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, MantenimientoUpdate]):
     """
@@ -45,18 +43,17 @@ class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, Mante
             logger.error(f"TipoMantenimiento con ID {obj_in.tipo_mantenimiento_id} no encontrado al crear mantenimiento.")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"TipoMantenimiento con ID {obj_in.tipo_mantenimiento_id} no encontrado.")
 
-        if obj_in.proveedor_servicio_id:
-            proveedor = proveedor_service.get(db, id=obj_in.proveedor_servicio_id)
-            if not proveedor:
-                 logger.error(f"Proveedor de servicio con ID {obj_in.proveedor_servicio_id} no encontrado al crear mantenimiento.")
-                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Proveedor de servicio con ID {obj_in.proveedor_servicio_id} no encontrado.")
+        tecnico = tecnico_service.get(db, id=obj_in.tecnico_id)
+        if not tecnico:
+            logger.error(f"Técnico con ID {obj_in.tecnico_id} no encontrado al crear mantenimiento.")
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Técnico con ID {obj_in.tecnico_id} no encontrado.")
+        if not tecnico.is_active:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El técnico seleccionado está inactivo y no puede asignarse a nuevos mantenimientos.")
 
         if obj_in.fecha_inicio and obj_in.fecha_finalizacion and obj_in.fecha_inicio > obj_in.fecha_finalizacion:
             logger.warning("Intento de crear mantenimiento con fecha de inicio posterior a la fecha de finalización.")
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La fecha de inicio no puede ser posterior a la fecha de finalización.")
 
-        # super().create() ya no hace commit.
-        # fecha_proximo_mantenimiento se calcula por trigger en DB. Se necesitará refresh en la ruta.
         db_mantenimiento = super().create(db, obj_in=obj_in)
         logger.info(f"Mantenimiento para equipo '{equipo.nombre}' (Tipo: '{tipo_mant.nombre}') preparado para ser creado.")
         return db_mantenimiento
@@ -65,8 +62,8 @@ class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, Mante
         self,
         db: Session,
         *,
-        db_obj: Mantenimiento, # Objeto Mantenimiento existente
-        obj_in: Union[MantenimientoUpdate, Dict[str, Any]] # Datos para actualizar
+        db_obj: Mantenimiento, 
+        obj_in: Union[MantenimientoUpdate, Dict[str, Any]] 
     ) -> Mantenimiento:
         """
         Actualiza un registro de mantenimiento existente.
@@ -76,15 +73,13 @@ class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, Mante
         mant_id = db_obj.id
         logger.debug(f"Intentando actualizar mantenimiento ID {mant_id} con datos: {update_data}")
 
-        if "proveedor_servicio_id" in update_data and update_data["proveedor_servicio_id"] != db_obj.proveedor_servicio_id:
-            if update_data["proveedor_servicio_id"] is not None:
-                proveedor = proveedor_service.get(db, id=update_data["proveedor_servicio_id"])
-                if not proveedor:
-                    logger.error(f"Proveedor de servicio con ID {update_data['proveedor_servicio_id']} no encontrado al actualizar mantenimiento {mant_id}.")
-                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Proveedor de servicio con ID {update_data['proveedor_servicio_id']} no encontrado.")
-            # Permitir establecerlo a None
+        if "tecnico_id" in update_data and update_data["tecnico_id"] != db_obj.tecnico_id:
+            if update_data["tecnico_id"] is not None:
+                tecnico = tecnico_service.get(db, id=update_data["tecnico_id"])
+                if not tecnico:
+                    logger.error(f"Técnico con ID {update_data['tecnico_id']} no encontrado al actualizar mantenimiento {mant_id}.")
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Técnico con ID {update_data['tecnico_id']} no encontrado.")
 
-        # Validar fechas si ambas están presentes en la actualización o una está y la otra ya existe en db_obj
         fecha_inicio_final = update_data.get("fecha_inicio", db_obj.fecha_inicio)
         fecha_finalizacion_final = update_data.get("fecha_finalizacion", db_obj.fecha_finalizacion)
 
@@ -92,8 +87,6 @@ class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, Mante
             logger.warning(f"Error de validación de fechas al actualizar mantenimiento {mant_id}: inicio posterior a fin.")
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La fecha de inicio no puede ser posterior a la fecha de finalización.")
         
-        # No se puede cambiar equipo_id ni tipo_mantenimiento_id directamente aquí.
-        # Si se necesitara, se requeriría lógica más compleja o un endpoint dedicado.
         if "equipo_id" in update_data and update_data["equipo_id"] != db_obj.equipo_id:
             logger.error(f"Intento de cambiar equipo_id en mantenimiento ID {mant_id}. Operación no permitida por este método.")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No se puede cambiar el equipo de un mantenimiento existente.")
@@ -101,9 +94,6 @@ class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, Mante
             logger.error(f"Intento de cambiar tipo_mantenimiento_id en mantenimiento ID {mant_id}. Operación no permitida por este método.")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No se puede cambiar el tipo de un mantenimiento existente.")
 
-
-        # super().update() ya no hace commit.
-        # fecha_proximo_mantenimiento se actualiza por trigger si cambia estado a Completado. Se necesitará refresh en la ruta.
         updated_db_mantenimiento = super().update(db, db_obj=db_obj, obj_in=update_data)
         logger.info(f"Mantenimiento ID {mant_id} preparado para ser actualizado.")
         return updated_db_mantenimiento
@@ -116,7 +106,7 @@ class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, Mante
         statement = (
             select(self.model)
             .where(self.model.equipo_id == equipo_id)
-            .order_by(self.model.fecha_programada.desc().nullslast(), self.model.created_at.desc()) # type: ignore[attr-defined]
+            .order_by(self.model.fecha_programada.desc().nullslast(), self.model.created_at.desc()) 
             .offset(skip)
             .limit(limit)
         )
@@ -131,7 +121,7 @@ class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, Mante
         está dentro del rango especificado.
         """
         logger.debug(f"Buscando próximos mantenimientos para los siguientes {days_ahead} días (skip: {skip}, limit: {limit}).")
-        fecha_limite = datetime.now(timezone.utc) + timedelta(days=days_ahead) # Usar UTC
+        fecha_limite = datetime.now(timezone.utc) + timedelta(days=days_ahead)
         statement = (
             select(self.model)
             .join(self.model.tipo_mantenimiento)
@@ -150,10 +140,6 @@ class MantenimientoService(BaseService[Mantenimiento, MantenimientoCreate, Mante
         )
         result = db.execute(statement)
         return list(result.scalars().all())
-    
-    # El método remove es heredado de BaseService y ya no hace commit.
-    # Si se necesitara lógica específica antes de eliminar un mantenimiento (ej. verificar si tiene documentos asociados
-    # y qué hacer con ellos), se debería sobreescribir remove aquí.
     
     def get_multi_with_filters(
         self,

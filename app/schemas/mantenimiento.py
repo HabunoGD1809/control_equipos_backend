@@ -9,6 +9,7 @@ from .enums import EstadoMantenimientoEnum
 from .equipo import EquipoSimple
 from .tipo_mantenimiento import TipoMantenimiento
 from .proveedor import ProveedorSimple
+from .tecnico import TecnicoSimple
 
 
 # ===============================================================
@@ -23,8 +24,9 @@ class MantenimientoBase(BaseModel):
     fecha_finalizacion: Optional[datetime] = Field(None, description="Fecha y hora real en que finalizó el trabajo")
     costo_estimado: Optional[Decimal] = Field(None, ge=0, decimal_places=2, description="Costo estimado del mantenimiento")
     costo_real: Optional[Decimal] = Field(None, ge=0, decimal_places=2, description="Costo final real del mantenimiento")
-    tecnico_responsable: str = Field(..., description="Nombre del técnico o empresa responsable de realizar el mantenimiento")
-    proveedor_servicio_id: Optional[uuid.UUID] = Field(None, description="ID del proveedor de servicio externo, si aplica")
+    
+    tecnico_id: uuid.UUID = Field(..., description="ID del técnico o empresa responsable del mantenimiento")
+    
     estado: EstadoMantenimientoEnum = Field(default=EstadoMantenimientoEnum.PROGRAMADO, description="Estado actual del proceso de mantenimiento")
     prioridad: int = Field(default=0, ge=0, le=2, description="Prioridad del mantenimiento (0=Baja, 1=Media, 2=Alta)")
     observaciones: Optional[str] = Field(None, description="Notas, diagnósticos u observaciones sobre el mantenimiento")
@@ -51,8 +53,7 @@ class MantenimientoUpdate(BaseModel):
     fecha_finalizacion: Optional[datetime] = None
     costo_estimado: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
     costo_real: Optional[Decimal] = Field(None, ge=0, decimal_places=2)
-    tecnico_responsable: Optional[str] = None
-    proveedor_servicio_id: Optional[uuid.UUID] = None
+    tecnico_id: Optional[uuid.UUID] = None
     estado: Optional[EstadoMantenimientoEnum] = None
     prioridad: Optional[int] = Field(None, ge=0, le=2)
     observaciones: Optional[str] = None
@@ -80,7 +81,7 @@ class Mantenimiento(MantenimientoInDBBase):
     """
     equipo: EquipoSimple
     tipo_mantenimiento: TipoMantenimiento
-    proveedor_servicio: Optional[ProveedorSimple] = None
+    tecnico: TecnicoSimple
 
 
 # ===============================================================
@@ -97,5 +98,6 @@ class MantenimientoSimple(BaseModel):
     fecha_programada: Optional[datetime] = None
     fecha_finalizacion: Optional[datetime] = None
     estado: EstadoMantenimientoEnum
+    tecnico_nombre: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)

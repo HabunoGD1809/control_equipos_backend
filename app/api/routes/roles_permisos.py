@@ -19,7 +19,6 @@ from app.core import permissions as perms
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# ==============================================================================
 
 # ==========================
 # Endpoints para ROLES
@@ -43,7 +42,6 @@ def create_rol(
     """
     logger.info(f"Intento de creación de rol '{rol_in.nombre}' por usuario {current_user.nombre_usuario}")
     try:
-        # El servicio .create() ya no hace commit y maneja validaciones previas de unicidad.
         rol = rol_service.create(db=db, obj_in=rol_in)
         db.commit()
         db.refresh(rol)
@@ -51,7 +49,6 @@ def create_rol(
         return rol
     except HTTPException as http_exc:
         # Si el servicio lanza HTTPException (ej. 409 por unicidad, 404 por permiso no encontrado)
-        # No es necesario db.rollback() porque la excepción se lanza antes de la fase de commit.
         logger.warning(f"Error HTTP al crear rol '{rol_in.nombre}': {http_exc.detail}")
         raise http_exc
     except IntegrityError as e:

@@ -43,8 +43,6 @@ async def test_trigger_actualizar_inventario_stock_fn(
     response = await client.post("/api/v1/inventario/movimientos/", json=movimiento_data, headers=admin_headers)
     assert response.status_code == 201, "El movimiento de inventario debió crearse."
 
-    # --- CORRECCIÓN ---
-    # Verificación: Consultamos el stock usando filtros en lugar de un ID directo.
     params = {
         "tipo_item_id": str(stock_inicial_toner.tipo_item_id),
         "ubicacion": stock_inicial_toner.ubicacion,

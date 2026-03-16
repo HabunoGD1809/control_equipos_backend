@@ -105,9 +105,6 @@ async def client(app: FastAPI, db: Session) -> AsyncGenerator[AsyncClient, None]
         app.dependency_overrides[get_db] = original_get_db
         logger.debug("AsyncClient: Dependencia get_db restaurada.")
     else:
-        # --- CORRECCIÓN FINAL ---
-        # Usamos .pop() en lugar de 'del'. Esto elimina la clave si existe,
-        # y no hace nada (sin dar error) si ya fue eliminada por otro lado.
         app.dependency_overrides.pop(get_db, None)
         logger.debug("AsyncClient: Dependencia get_db eliminada del override (de forma segura).")
     logger.debug("AsyncClient fixtures limpiados.")
@@ -686,8 +683,6 @@ async def stock_inicial_toner(db: Session, tipo_item_toner: TipoItemInventario) 
     cantidad_inicial = 10
     costo_inicial = Decimal("25.50")
     
-    # --- CORRECCIÓN CLAVE ---
-    # Buscamos el registro usando el lote por defecto, no None.
     stock_record = db.query(InventarioStock).filter(
         InventarioStock.tipo_item_id == tipo_item_toner.id,
         InventarioStock.ubicacion == ubicacion_test,

@@ -1,7 +1,6 @@
 import pytest
 import asyncio
 from httpx import AsyncClient
-# CORRECCIÓN: Importar timezone para crear datetimes "aware"
 from datetime import datetime, timedelta, timezone 
 from uuid import uuid4
 
@@ -24,8 +23,6 @@ async def test_trigger_updated_at_on_equipment_update(
     admin_headers = {"Authorization": f"Bearer {auth_token_admin}"}
     equipo_id = test_equipo_reservable.id
 
-    # === CORRECCIÓN FINAL Y DEFINITIVA ===
-    # Usamos datetime.now(timezone.utc) en lugar de utcnow() para crear un datetime "aware".
     valor_antiguo = datetime.now(timezone.utc) - timedelta(seconds=10)
     
     db.execute(

@@ -52,7 +52,6 @@ class LicenciaSoftwareService(BaseService[LicenciaSoftware, LicenciaSoftwareCrea
         
         db_licencia = super().create(db, obj_in=LicenciaSoftwareCreate(**create_data))
         
-        # Corrección: Acceder a través del objeto software_info_db que ya obtuvimos
         logger.info(f"Licencia para '{software_info_db.nombre}' (Clave: {db_licencia.clave_producto}) preparada para ser creada.")
         return db_licencia
 

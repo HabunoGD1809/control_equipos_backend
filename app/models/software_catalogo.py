@@ -38,8 +38,6 @@ class SoftwareCatalogo(Base):
         "LicenciaSoftware",
         back_populates="software_info",
         lazy="selectin",
-        # Eliminar el parámetro 'cascade=False'
-        # cascade=False # <--- CORRECCIÓN: Eliminar esta línea
     )
 
     def __repr__(self) -> str:

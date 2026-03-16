@@ -28,14 +28,10 @@ class Documentacion(Base):
     Modelo ORM para la tabla 'documentacion'. (Actualizado con FKs y corrección TSVECTOR)
     """
     __tablename__ = "documentacion"
-    # Usar el schema definido en Base si existe, o quitar schema= si no se usa
-    # __table_args__ = ({'schema': Base.metadata.schema},) # Si Base define un schema
     __table_args__ = (
         Index("ix_documentacion_texto_busqueda", "texto_busqueda", postgresql_using="gin"),
-        # Otros índices si los tenías...
     )
 
-    # Mantener definiciones de columnas y FKs como en TU versión original
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     equipo_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("equipos.id", ondelete="CASCADE"), nullable=True, index=True)
     mantenimiento_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("mantenimiento.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -43,8 +39,8 @@ class Documentacion(Base):
     tipo_documento_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tipos_documento.id", ondelete="RESTRICT"), index=True)
     titulo: Mapped[str] = mapped_column(String(255))
     descripcion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    enlace: Mapped[str] = mapped_column(Text) # Mantener Text como en tu versión
-    nombre_archivo: Mapped[Optional[str]] = mapped_column(String(512), nullable=True) # Tamaño aumentado estaba bien
+    enlace: Mapped[str] = mapped_column(Text) 
+    nombre_archivo: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
     mime_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     tamano_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
     fecha_subida: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -54,11 +50,9 @@ class Documentacion(Base):
     fecha_verificacion: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     notas_verificacion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
-    # Columna TSVECTOR (CORREGIDA) - Mapeada correctamente
     texto_busqueda = mapped_column(TSVECTOR, nullable=True, server_default=text("''"))
-    # Ya no se usa Mapped[Optional[str]] = mapped_column(TextType, nullable=True)
 
-    # --- Relaciones (Mantener como en tu versión original) ---
+    # --- Relaciones ---
     equipo: Mapped[Optional["Equipo"]] = relationship(
         "Equipo", back_populates="documentos", lazy="selectin"
     )
@@ -69,7 +63,7 @@ class Documentacion(Base):
         "LicenciaSoftware", back_populates="documentos", lazy="selectin"
     )
     tipo_documento: Mapped["TipoDocumento"] = relationship(
-        "TipoDocumento", back_populates="documentos", lazy="joined" # Mantener joined si era así
+        "TipoDocumento", back_populates="documentos", lazy="joined"
     )
     subido_por_usuario: Mapped[Optional["Usuario"]] = relationship(
         "Usuario", foreign_keys=[subido_por], back_populates="documentos_subidos", lazy="selectin"

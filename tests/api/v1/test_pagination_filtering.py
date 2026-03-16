@@ -54,7 +54,6 @@ async def test_filter_mantenimientos_by_date_range_and_status(
     client: AsyncClient,
     auth_token_admin: str,
     test_equipo_reservable: Equipo,
-    # === CORRECCIÓN: Usar un nombre de fixture que sí existe. ===
     tipo_mantenimiento_correctivo: TipoMantenimiento,
 ):
     """

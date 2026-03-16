@@ -195,7 +195,6 @@ async def test_update_rol_remove_all_permissions(client: AsyncClient, auth_token
     target_rol = create_test_rol
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
     
-    # CORRECCIÓN: Se añaden todos los campos obligatorios
     update_schema = RolUpdate(
         nombre=target_rol.nombre,
         descripcion=target_rol.descripcion,
@@ -213,7 +212,6 @@ async def test_update_rol_no_permission(client: AsyncClient, auth_token_usuario_
     target_rol = create_test_rol
     headers = {"Authorization": f"Bearer {auth_token_usuario_regular}"}
     
-    # CORRECCIÓN: Se añaden todos los campos obligatorios
     update_schema = RolUpdate(
         nombre=target_rol.nombre,
         descripcion="Intento no autorizado",
@@ -227,7 +225,6 @@ async def test_update_rol_not_found(client: AsyncClient, auth_token_admin: str):
     headers = {"Authorization": f"Bearer {auth_token_admin}"}
     non_existent_id = uuid4()
     
-    # CORRECCIÓN: Se añaden todos los campos obligatorios
     update_schema = RolUpdate(
         nombre="Fantasma",
         descripcion="Fantasma",

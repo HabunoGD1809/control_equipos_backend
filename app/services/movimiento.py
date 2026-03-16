@@ -35,7 +35,9 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
         return statement.options(
             selectinload(Movimiento.equipo),
             selectinload(Movimiento.usuario_registrador),
-            selectinload(Movimiento.usuario_autorizador)
+            selectinload(Movimiento.usuario_autorizador),
+            selectinload(Movimiento.ubicacion_origen),
+            selectinload(Movimiento.ubicacion_destino)
         )
 
     def get(self, db: Session, id: Any) -> Optional[Movimiento]:
@@ -80,8 +82,8 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
                     p_equipo_id => :equipo_id,
                     p_usuario_id => :usuario_id,
                     p_tipo_movimiento => :tipo_movimiento,
-                    p_origen => :origen,
-                    p_destino => :destino,
+                    p_ubicacion_origen_id => :ubicacion_origen_id,
+                    p_ubicacion_destino_id => :ubicacion_destino_id,
                     p_proposito => :proposito,
                     p_fecha_prevista_retorno => :fecha_prevista_retorno,
                     p_recibido_por => :recibido_por,
@@ -95,8 +97,8 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
                 "equipo_id": obj_in.equipo_id,
                 "usuario_id": registrado_por_usuario.id,
                 "tipo_movimiento": tipo_movimiento_valor_str,
-                "origen": obj_in.origen,
-                "destino": obj_in.destino,
+                "ubicacion_origen_id": obj_in.ubicacion_origen_id,
+                "ubicacion_destino_id": obj_in.ubicacion_destino_id,
                 "proposito": obj_in.proposito,
                 "fecha_prevista_retorno": obj_in.fecha_prevista_retorno,
                 "recibido_por": obj_in.recibido_por,
@@ -210,8 +212,8 @@ class MovimientoService(BaseService[Movimiento, MovimientoCreate, MovimientoUpda
         # 2. Lógica específica por estado
         if estado_nuevo == EstadoMovimientoEquipoEnum.AUTORIZADO:
             update_data: Dict[str, Any] = {
-            "estado": estado_nuevo.value if hasattr(estado_nuevo, 'value') else estado_nuevo
-        }
+                "estado": estado_nuevo.value if hasattr(estado_nuevo, 'value') else estado_nuevo
+            }
             
         elif estado_nuevo == EstadoMovimientoEquipoEnum.RECHAZADO:
             if not obj_in.observaciones:

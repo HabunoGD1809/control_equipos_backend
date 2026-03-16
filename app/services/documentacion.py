@@ -26,7 +26,6 @@ class DocumentacionService(BaseService[Documentacion, DocumentacionCreateInterna
     """
 
     def create(self, db: Session, *, obj_in: DocumentacionCreateInternal) -> Documentacion:
-        # Corrección en el log: usar obj_in.titulo o obj_in.nombre_archivo
         logger.debug(f"Intentando crear documentación: '{obj_in.titulo}' (Archivo: {obj_in.nombre_archivo}) para Tipo ID {obj_in.tipo_documento_id}")
 
         if not tipo_documento_service.get(db, id=obj_in.tipo_documento_id):
@@ -51,7 +50,6 @@ class DocumentacionService(BaseService[Documentacion, DocumentacionCreateInterna
         db_obj = self.model(**create_data)
         
         db.add(db_obj)
-        # Corrección en el log: usar db_obj.titulo o db_obj.nombre_archivo
         logger.info(f"Documentación '{db_obj.titulo}' (Archivo: {db_obj.nombre_archivo}) preparada para ser creada (Enlace: {db_obj.enlace}).")
         return db_obj
 
@@ -77,7 +75,6 @@ class DocumentacionService(BaseService[Documentacion, DocumentacionCreateInterna
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"TipoDocumento con ID {update_data['tipo_documento_id']} no encontrado.")
 
         updated_db_obj = super().update(db, db_obj=db_obj, obj_in=update_data)
-        # Corrección en el log: usar updated_db_obj.titulo
         logger.info(f"Metadatos de documentación ID {doc_id} ('{updated_db_obj.titulo}') preparados para ser actualizados.")
         return updated_db_obj
 

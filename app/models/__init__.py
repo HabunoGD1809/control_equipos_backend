@@ -18,6 +18,7 @@ from .reserva_equipo import ReservaEquipo
 from .rol import Rol
 from .rol_permiso import RolPermiso
 from .software_catalogo import SoftwareCatalogo
+from .tecnico import Tecnico
 from .tipo_documento import TipoDocumento
 from .tipo_item_inventario import TipoItemInventario
 from .tipo_mantenimiento import TipoMantenimiento
@@ -49,6 +50,7 @@ __all__ = [
     "Rol",
     "RolPermiso",
     "SoftwareCatalogo",
+    "Tecnico",
     "TipoDocumento",
     "TipoItemInventario",
     "TipoMantenimiento",

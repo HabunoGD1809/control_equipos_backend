@@ -15,13 +15,19 @@ from .usuario import Usuario, UsuarioCreate, UsuarioUpdate, UsuarioSimple
 from .proveedor import Proveedor, ProveedorCreate, ProveedorUpdate, ProveedorSimple
 
 # Estados Equipo (Catálogo)
-from .estado_equipo import EstadoEquipo, EstadoEquipoCreate, EstadoEquipoUpdate, EstadoEquipoSimple # anadido ahora
+from .estado_equipo import EstadoEquipo, EstadoEquipoCreate, EstadoEquipoUpdate, EstadoEquipoSimple
 
 # Tipos Documento (Catálogo)
 from .tipo_documento import TipoDocumento, TipoDocumentoCreate, TipoDocumentoUpdate
 
 # Tipos Mantenimiento (Catálogo)
 from .tipo_mantenimiento import TipoMantenimiento, TipoMantenimientoCreate, TipoMantenimientoUpdate
+
+# Técnicos de Mantenimiento (Catálogo)
+from .tecnico import Tecnico, TecnicoCreate, TecnicoUpdate, TecnicoSimple
+
+# Ubicaciones (Catálogo)
+from .ubicacion import UbicacionRead, UbicacionCreate, UbicacionUpdate, UbicacionSimple
 
 # Equipo y Componentes
 from .equipo import (
@@ -100,7 +106,7 @@ from .reserva_equipo import (
 )
 
 # Notificaciones y Logs
-from .notificacion import Notificacion, NotificacionUpdate # Create es interno
+from .notificacion import Notificacion, NotificacionUpdate
 from .login_log import LoginLog
 from .audit_log import AuditLog
 from .backup_log import BackupLog
@@ -122,6 +128,8 @@ __all__ = [
     "EstadoEquipo", "EstadoEquipoCreate", "EstadoEquipoUpdate", "EstadoEquipoSimple",
     "TipoDocumento", "TipoDocumentoCreate", "TipoDocumentoUpdate",
     "TipoMantenimiento", "TipoMantenimientoCreate", "TipoMantenimientoUpdate",
+    "Tecnico", "TecnicoCreate", "TecnicoUpdate", "TecnicoSimple",
+    "UbicacionRead", "UbicacionCreate", "UbicacionUpdate", "UbicacionSimple",
     "EquipoCreate", "EquipoUpdate", "EquipoSimple", "EquipoSearchResult", "GlobalSearchResult", "EquipoRead", #"Equipo",
     "EquipoComponente", "EquipoComponenteCreate", "EquipoComponenteUpdate", "ComponenteInfo", "PadreInfo",
     "Movimiento", "MovimientoCreate", "MovimientoUpdate",

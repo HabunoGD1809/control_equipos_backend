@@ -72,14 +72,9 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         )
 
         db.add(db_obj)
-        # --- CORRECCIÓN ---
-        # Se elimina la llamada a db.flush() para prevenir errores de concurrencia en la sesión.
-        # La validación de solapamiento se delega al db.commit() en la capa de la API,
-        # que es donde la constraint de la base de datos se evaluará de forma atómica.
         logger.info(f"Reserva para equipo '{equipo.nombre}' (Horario: {db_obj.fecha_hora_inicio} - {db_obj.fecha_hora_fin}) preparada para ser creada.")
         return db_obj
 
-    # (El resto de los métodos del servicio no necesitan cambios)
     def update(
         self,
         db: Session,

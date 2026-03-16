@@ -11,7 +11,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from .equipo import Equipo # noqa: F401
     from .tipo_item_inventario import TipoItemInventario # noqa: F401
-    from .mantenimiento import Mantenimiento # noqa: F401
+    from .tecnico import Tecnico
     from .licencia_software import LicenciaSoftware # noqa: F401
 
 
@@ -32,7 +32,7 @@ class Proveedor(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    # --- Relaciones mapeadas ---
+    # --- Relaciones ---
     equipos_suministrados: Mapped[List["Equipo"]] = relationship(
         "Equipo",
         back_populates="proveedor",
@@ -43,11 +43,14 @@ class Proveedor(Base):
         back_populates="proveedor_preferido",
         lazy="selectin"
     )
-    mantenimientos_realizados: Mapped[List["Mantenimiento"]] = relationship(
-        "Mantenimiento",
-        back_populates="proveedor_servicio",
+    
+    # Relación hacia la tabla mixta de Técnicos (Contratistas)
+    tecnicos: Mapped[List["Tecnico"]] = relationship(
+        "Tecnico",
+        back_populates="proveedor",
         lazy="selectin"
     )
+    
     licencias_adquiridas: Mapped[List["LicenciaSoftware"]] = relationship(
         "LicenciaSoftware",
         back_populates="proveedor",

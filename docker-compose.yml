@@ -36,6 +36,8 @@ services:
     ports:
       - "8086:8000"
     env_file: .env
+    environment:
+      - APP_COMPONENT=backend
     # user: root solo para desarrollo local con volúmenes montados.
     # En producción quita esta línea y dejar el usuario "app" del Dockerfile.
     user: root
@@ -59,8 +61,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: control_equipos_worker
-    command: uv run celery -A app.worker worker --loglevel=info
+    command: uv run celery -A app.worker.celery_app worker --loglevel=info
     env_file: .env
+    environment:
+      - APP_COMPONENT=worker
     user: root
     volumes:
       - ./app:/home/app/app
@@ -80,8 +84,10 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: control_equipos_beat
-    command: uv run celery -A app.worker beat -s /tmp/celerybeat-schedule --pidfile=/tmp/celerybeat.pid --loglevel=info
+    command: uv run celery -A app.worker.celery_app beat -s /tmp/celerybeat-schedule --pidfile=/tmp/celerybeat.pid --loglevel=info
     env_file: .env
+    environment:
+      - APP_COMPONENT=beat
     user: root
     volumes:
       - ./app:/home/app/app

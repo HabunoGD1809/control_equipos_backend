@@ -40,7 +40,7 @@ def create_mantenimiento(
         mantenimiento = mantenimiento_service.create(db=db, obj_in=mantenimiento_in)
         db.commit()
         db.refresh(mantenimiento)
-        db.refresh(mantenimiento, attribute_names=['equipo', 'tipo_mantenimiento', 'proveedor_servicio'])
+        db.refresh(mantenimiento, attribute_names=['equipo', 'tipo_mantenimiento', 'tecnico'])
         logger.info(f"Mantenimiento ID {mantenimiento.id} para equipo ID {mantenimiento.equipo_id} creado exitosamente por '{current_user.nombre_usuario}'.")
         return mantenimiento
     except HTTPException as http_exc:
@@ -128,7 +128,7 @@ def update_mantenimiento(
         updated_mantenimiento = mantenimiento_service.update(db=db, db_obj=db_mantenimiento, obj_in=mantenimiento_in)
         db.commit()
         db.refresh(updated_mantenimiento)
-        db.refresh(updated_mantenimiento, attribute_names=['equipo', 'tipo_mantenimiento', 'proveedor_servicio'])
+        db.refresh(updated_mantenimiento, attribute_names=['equipo', 'tipo_mantenimiento', 'tecnico'])
         logger.info(f"Mantenimiento ID {mantenimiento_id} actualizado exitosamente por '{current_user.nombre_usuario}'.")
         return updated_mantenimiento
     except HTTPException as http_exc:

@@ -7,7 +7,6 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import ValidationError # noqa
 from sqlalchemy.exc import SQLAlchemyError, IntegrityError, NoResultFound
 
-# Importar errores específicos de psycopg si está disponible
 try:
     # Usar psycopg en lugar de psycopg2 si es v3
     from psycopg import errors as psycopg_errors
@@ -161,7 +160,6 @@ async def database_exception_handler(request: Request, exc: Exception):
          detail_msg = getattr(getattr(original_exc, 'diag', {}), 'detail', None) if original_exc else error_message_for_matching
          if constraint_name == "fk_usuarios_rol": user_message = "El Rol especificado no fue encontrado."
          elif constraint_name == "fk_equipos_estado": user_message = "El Estado de Equipo especificado no fue encontrado."
-         # ... (otros mapeos FK específicos) ...
          elif detail_msg and ("not present in table" in detail_msg or "no está presente en la tabla" in detail_msg.lower()): user_message = f"Error de referencia: {detail_msg}"
          else: user_message = f"Error de referencia: El registro vinculado no existe (restricción: {constraint_name or 'desconocida'})."
          status_code = status.HTTP_404_NOT_FOUND # O 422
@@ -195,7 +193,6 @@ async def database_exception_handler(request: Request, exc: Exception):
         elif "no se puede cancelar un movimiento en estado" in error_message_for_matching.lower():
             user_message = error_message_for_matching
             status_code = status.HTTP_409_CONFLICT
-        # ... (otros mapeos de RAISE EXCEPTION) ...
         else:
             user_message = f"Error en lógica de base de datos: {error_message_for_matching}"
             status_code = status.HTTP_400_BAD_REQUEST

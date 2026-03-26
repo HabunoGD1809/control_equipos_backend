@@ -5,11 +5,9 @@ from uuid import UUID
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-# Importar modelos
 from app.models.login_log import LoginLog
 
-logger = logging.getLogger(__name__) # Configurar logger
-
+logger = logging.getLogger(__name__)
 class LoginLogService:
     """
     Servicio para registrar y consultar los logs de intentos de acceso.
@@ -47,13 +45,11 @@ class LoginLogService:
             # El campo 'intento' (timestamp) tiene un default en el modelo/BD (default=func.now())
         )
         db.add(db_obj)
-        # db.commit() # ELIMINADO
-        # db.refresh(db_obj) # ELIMINADO - Se hará en la ruta de login si se devuelve y necesita refresco
         
         logger.info(f"Intento de login para '{username_attempt}' (Exito: {success}) preparado para ser registrado.")
         return db_obj
 
-    # --- Métodos de Lectura (ya usan select y no necesitan cambios de commit) ---
+    # --- Métodos de Lectura ---
     def get(self, db: Session, id: UUID) -> Optional[LoginLog]:
         """Obtiene un log de intento de login por su ID."""
         logger.debug(f"Obteniendo log de login por ID: {id}")

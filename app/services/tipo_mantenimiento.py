@@ -4,14 +4,12 @@ from typing import Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-# Importar modelos y schemas
 from app.models.tipo_mantenimiento import TipoMantenimiento
 from app.schemas.tipo_mantenimiento import TipoMantenimientoCreate, TipoMantenimientoUpdate
 
-# Importar la clase base del servicio
-from .base_service import BaseService # BaseService ya está modificado
+from .base_service import BaseService
 
-logger = logging.getLogger(__name__) # Configurar logger
+logger = logging.getLogger(__name__)
 
 class TipoMantenimientoService(BaseService[TipoMantenimiento, TipoMantenimientoCreate, TipoMantenimientoUpdate]):
     """

@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session
 
 
 from app.core.config import settings
-# Importar modelos/schemas si se necesita crear datos para filtrar
 from app.models.backup_log import BackupLog as BackupLogModel
 
 # Marcar todos los tests en este módulo para usar asyncio

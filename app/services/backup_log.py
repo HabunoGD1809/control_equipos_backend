@@ -6,12 +6,9 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-# Importar modelos
 from app.models.backup_log import BackupLog as BackupLogModel
-# El schema BackupLogSchema no se usa directamente en el servicio,
-# pero las rutas lo usarán para la validación de la respuesta.
 
-logger = logging.getLogger(__name__) # Configurar logger
+logger = logging.getLogger(__name__)
 
 class BackupLogService:
     """

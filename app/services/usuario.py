@@ -7,16 +7,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from fastapi import HTTPException, status
 
-# Importar modelos y schemas
 from app.models.usuario import Usuario
 from app.schemas.usuario import UsuarioCreate, UsuarioUpdate
 from app.schemas.password import PasswordChange
 
-# Importar la clase base y otros servicios si son necesarios
 from .base_service import BaseService
 from .rol import rol_service
 
-# Importar utilidades de contraseña y seguridad
 from app.core.password import verify_password, get_password_hash
 
 logger = logging.getLogger(__name__)

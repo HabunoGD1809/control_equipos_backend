@@ -7,12 +7,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from app.api import deps
-# Importar Schemas específicos
 from app.schemas.estado_equipo import EstadoEquipo as EstadoEquipoSchema, EstadoEquipoCreate, EstadoEquipoUpdate
 from app.schemas.tipo_documento import TipoDocumento as TipoDocumentoSchema, TipoDocumentoCreate, TipoDocumentoUpdate
 from app.schemas.tipo_mantenimiento import TipoMantenimiento as TipoMantenimientoSchema, TipoMantenimientoCreate, TipoMantenimientoUpdate
 from app.schemas.common import Msg
-# Importar Servicios específicos
 from app.services.estado_equipo import estado_equipo_service
 from app.services.tipo_documento import tipo_documento_service
 from app.services.tipo_mantenimiento import tipo_mantenimiento_service

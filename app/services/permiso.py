@@ -1,16 +1,14 @@
 import logging
 from typing import Optional
-from uuid import UUID # Importar UUID si los IDs son de este tipo
+from uuid import UUID
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-# Importar modelos y schemas necesarios
 from app.models.permiso import Permiso
 from app.schemas.permiso import PermisoCreate, PermisoUpdate
 
-# Importar la clase base del servicio
-from .base_service import BaseService # BaseService ya está modificado
+from .base_service import BaseService
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +24,7 @@ class PermisoService(BaseService[Permiso, PermisoCreate, PermisoUpdate]):
         """
         Obtiene un permiso por su nombre. (Ejemplo, si se necesitara)
         """
-        statement = select(self.model).where(self.model.nombre == name) # Usar self.model
+        statement = select(self.model).where(self.model.nombre == name)
         result = db.execute(statement)
         return result.scalar_one_or_none()
 

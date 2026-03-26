@@ -1,18 +1,16 @@
-import logging # Importar logging
+import logging
 from typing import Optional, Union, Dict, Any
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from fastapi import HTTPException, status
 
-# Importar modelos y schemas
 from app.models.software_catalogo import SoftwareCatalogo
 from app.schemas.software_catalogo import SoftwareCatalogoCreate, SoftwareCatalogoUpdate
 
-# Importar la clase base del servicio
-from .base_service import BaseService # BaseService ya está modificado
+from .base_service import BaseService
 
-logger = logging.getLogger(__name__) # Configurar logger
+logger = logging.getLogger(__name__)
 
 class SoftwareCatalogoService(BaseService[SoftwareCatalogo, SoftwareCatalogoCreate, SoftwareCatalogoUpdate]):
     """
@@ -28,7 +26,7 @@ class SoftwareCatalogoService(BaseService[SoftwareCatalogo, SoftwareCatalogoCrea
         logger.debug(f"Buscando en catálogo de software por nombre='{name}', version='{version}'")
         statement = select(self.model).where(
             self.model.nombre == name,
-            self.model.version == version # Comparación con None (SQL IS NULL) es manejada por SQLAlchemy
+            self.model.version == version
         )
         result = db.execute(statement)
         return result.scalar_one_or_none()
@@ -43,11 +41,10 @@ class SoftwareCatalogoService(BaseService[SoftwareCatalogo, SoftwareCatalogoCrea
         if existing:
             logger.warning(f"Intento de crear entrada de catálogo SW duplicada: Nombre='{obj_in.nombre}', Versión='{obj_in.version or 'N/A'}'")
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, # 409 para conflicto
+                status_code=status.HTTP_409_CONFLICT,
                 detail=f"Ya existe un software con el nombre '{obj_in.nombre}' y versión '{obj_in.version or 'N/A'}'.",
             )
         
-        # super().create() ya no hace commit.
         db_catalogo_entry = super().create(db, obj_in=obj_in)
         logger.info(f"Entrada de catálogo SW '{db_catalogo_entry.nombre} v{db_catalogo_entry.version or 'N/A'}' preparada para ser creada.")
         return db_catalogo_entry
@@ -78,7 +75,7 @@ class SoftwareCatalogoService(BaseService[SoftwareCatalogo, SoftwareCatalogoCrea
             if existing and existing.id != catalogo_id: # Si existe y no es el mismo objeto
                 logger.warning(f"Conflicto al actualizar catálogo SW ID {catalogo_id}. La combinación Nombre='{new_name}', Versión='{new_version or 'N/A'}' ya existe.")
                 raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT, # 409 para conflicto
+                    status_code=status.HTTP_409_CONFLICT,
                     detail=f"Ya existe otro software con el nombre '{new_name}' y versión '{new_version or 'N/A'}'.",
                 )
         
@@ -86,10 +83,5 @@ class SoftwareCatalogoService(BaseService[SoftwareCatalogo, SoftwareCatalogoCrea
         updated_db_catalogo = super().update(db, db_obj=db_obj, obj_in=update_data)
         logger.info(f"Entrada de catálogo SW ID {catalogo_id} ('{updated_db_catalogo.nombre} v{updated_db_catalogo.version or 'N/A'}') preparada para ser actualizada.")
         return updated_db_catalogo
-
-    # El método remove es heredado de BaseService y ya no hace commit.
-    # La FK en licencias_software (software_catalogo_id) es ON DELETE RESTRICT por defecto en PostgreSQL
-    # si no se especifica otra cosa, lo que previene borrar si está en uso.
-    # Esta restricción de BD es suficiente y será capturada por el manejador de IntegrityError en la ruta.
 
 software_catalogo_service = SoftwareCatalogoService(SoftwareCatalogo)

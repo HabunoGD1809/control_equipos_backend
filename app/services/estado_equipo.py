@@ -1,16 +1,14 @@
 from typing import Optional
-from uuid import UUID # Importar UUID si se usa en IDs
+from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func # Importar func si se usa en conteos
+from sqlalchemy import select, func
 from fastapi import HTTPException, status
 
-# Importar modelos y schemas
 from app.models.estado_equipo import EstadoEquipo
-from app.models.equipo import Equipo # Necesario para la lógica de borrado comentada
+from app.models.equipo import Equipo
 from app.schemas.estado_equipo import EstadoEquipoCreate, EstadoEquipoUpdate
 
-# Importar la clase base del servicio
 from .base_service import BaseService
 
 

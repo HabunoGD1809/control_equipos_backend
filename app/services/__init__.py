@@ -8,7 +8,6 @@ Cada módulo define un servicio (usualmente una instancia de una clase)
 que encapsula las operaciones CRUD y específicas para un modelo ORM.
 """
 
-# Importar instancias de servicio para facilitar el acceso
 from .permiso import permiso_service
 from .rol import rol_service
 from .usuario import usuario_service
@@ -30,11 +29,9 @@ from .asignacion_licencia import asignacion_licencia_service
 from .reserva_equipo import reserva_equipo_service
 from .notificacion import notificacion_service
 from .login_log import login_log_service
-from .audit_log import audit_log_service # Servicio opcional para leer auditoría
-from .backup_log import backup_log_service # Servicio opcional para leer logs de backup
+from .audit_log import audit_log_service
+from .backup_log import backup_log_service
 
-# Definir __all__ es una buena práctica para indicar qué se exporta públicamente
-# aunque no es estrictamente necesario si siempre importas desde app.services.nombre_servicio
 __all__ = [
     "permiso_service",
     "rol_service",

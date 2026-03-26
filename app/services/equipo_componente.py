@@ -1,21 +1,18 @@
-import logging # Importar logging
-from typing import Optional, List, Union, Dict, Any # Union, Dict, Any no se usan aquí pero están por si se añaden más métodos
+import logging
+from typing import Optional, List, Union, Dict, Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import select, delete # delete no se usa directamente aquí
+from sqlalchemy import select, delete
 from fastapi import HTTPException, status
 
-# Importar modelos y schemas
 from app.models.equipo_componente import EquipoComponente
-# from app.models.equipo import Equipo # Usado a través de equipo_service
 from app.schemas.equipo_componente import EquipoComponenteCreate, EquipoComponenteUpdate
 
-# Importar la clase base y otros servicios necesarios
-from .base_service import BaseService # BaseService ya está modificado
-from .equipo import equipo_service # Para validar IDs de equipo
+from .base_service import BaseService
+from .equipo import equipo_service
 
-logger = logging.getLogger(__name__) # Configurar logger
+logger = logging.getLogger(__name__)
 
 class EquipoComponenteService(BaseService[EquipoComponente, EquipoComponenteCreate, EquipoComponenteUpdate]):
     """
@@ -85,7 +82,6 @@ class EquipoComponenteService(BaseService[EquipoComponente, EquipoComponenteCrea
                 detail=f"Ya existe una relación de tipo '{obj_in.tipo_relacion}' entre el equipo padre (ID: {padre.nombre}) y el componente (ID: {componente.nombre})."
             )
 
-        # Llamar al método base para crear. super().create() ya no hace commit.
         db_relation = super().create(db, obj_in=obj_in)
         logger.info(f"Relación de componente (Padre: {padre.nombre}, Componente: {componente.nombre}, Tipo: '{db_relation.tipo_relacion}') preparada para ser creada.")
         return db_relation

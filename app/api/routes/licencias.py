@@ -6,7 +6,6 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
-# Importar dependencias, schemas, servicios, modelos
 from app.api import deps
 from app.schemas.software_catalogo import SoftwareCatalogo, SoftwareCatalogoCreate, SoftwareCatalogoUpdate 
 from app.schemas.licencia_software import LicenciaSoftware, LicenciaSoftwareCreate, LicenciaSoftwareUpdate 
@@ -21,15 +20,12 @@ from app.core import permissions as perms
 
 logger = logging.getLogger(__name__)
 
-# ✅ redirect_slashes=False: Next.js elimina trailing slashes en request.nextUrl.pathname,
-# con esta opción el router acepta /asignaciones y /asignaciones/ como rutas distintas
-# sin intentar hacer redirect, evitando que /{licencia_id} capture "/asignaciones".
 router = APIRouter(redirect_slashes=False)
 
 # ==============================================================================
 # Endpoints para SOFTWARE CATALOGO
 # ==============================================================================
-@router.post("/catalogo/",
+@router.post("/catalogo",
              response_model=SoftwareCatalogo,
              status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
@@ -65,7 +61,7 @@ def create_software_catalogo_entry(
         logger.error(f"Error inesperado creando entrada de catálogo SW '{catalogo_in.nombre}': {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor al crear la entrada de catálogo.")
 
-@router.get("/catalogo/",
+@router.get("/catalogo",
             response_model=List[SoftwareCatalogo],
             dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))],
             summary="Listar Catálogo de Software",

@@ -5,14 +5,13 @@ from datetime import datetime
 
 from sqlalchemy import (
     Column, String, Text, DateTime, func, ForeignKey, BigInteger, Boolean,
-    Index, text # Asegurar importación de Index y text
+    Index, text
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID, TSVECTOR # Importar TSVECTOR
-from sqlalchemy.types import Text as TextType # Mantener importación original
+from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
+from sqlalchemy.types import Text as TextType
 
-# Importar Base desde la ubicación correcta en tu proyecto
-from app.db.base import Base # O from app.db.base_class import Base si es así
+from app.db.base import Base
 
 if TYPE_CHECKING:
     from .equipo import Equipo

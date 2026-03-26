@@ -6,11 +6,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 from fastapi import HTTPException, status
 
-# Importar modelos y schemas
 from app.models.asignacion_licencia import AsignacionLicencia
 from app.schemas.asignacion_licencia import AsignacionLicenciaCreate, AsignacionLicenciaUpdate
 
-# Importar la clase base y otros servicios necesarios
 from .base_service import BaseService
 from .licencia_software import licencia_software_service
 from .equipo import equipo_service

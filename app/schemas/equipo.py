@@ -5,7 +5,6 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field, ConfigDict
 
-# Importar schemas relacionados
 from .estado_equipo import EstadoEquipoSimple
 from .proveedor import ProveedorSimple
 
@@ -18,7 +17,7 @@ class EquipoBase(BaseModel):
     numero_serie: str = Field(..., max_length=100, description="Número de serie único del fabricante")
     codigo_interno: Optional[str] = Field(None, max_length=100, description="Código de activo fijo de la empresa")
     estado_id: uuid.UUID = Field(..., description="ID del estado actual del equipo")
-    ubicacion_id: Optional[uuid.UUID] = None # <-- CAMBIO A UUID
+    ubicacion_id: Optional[uuid.UUID] = None
     # ubicacion_actual: Optional[str] = Field(None, description="Descripción de la ubicación actual (sala, edificio, usuario)")
     marca: Optional[str] = Field(None, max_length=100)
     modelo: Optional[str] = Field(None, max_length=100)

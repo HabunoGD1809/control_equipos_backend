@@ -6,10 +6,9 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-# Importar modelos
 from app.models.audit_log import AuditLog as AuditLogModel
 
-logger = logging.getLogger(__name__) # Configurar logger
+logger = logging.getLogger(__name__)
 
 class AuditLogService:
     """

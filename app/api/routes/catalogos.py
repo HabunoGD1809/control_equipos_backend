@@ -15,6 +15,10 @@ from app.services.estado_equipo import estado_equipo_service
 from app.services.tipo_documento import tipo_documento_service
 from app.services.tipo_mantenimiento import tipo_mantenimiento_service
 from app.models.usuario import Usuario as UsuarioModel
+from app.schemas.departamento import DepartamentoRead as DepartamentoSchema, DepartamentoCreate, DepartamentoUpdate
+from app.schemas.marca import MarcaRead as MarcaSchema, MarcaCreate, MarcaUpdate
+from app.services.departamento import departamento_service
+from app.services.marca import marca_service
 
 from app.core import permissions as perms
 
@@ -481,3 +485,118 @@ def delete_tipo_mantenimiento(
         db.rollback()
         logger.error(f"Error inesperado eliminando tipo mantenimiento '{tipo_nombre_para_log}' (ID: {tipo_id}): {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno del servidor.")
+
+
+# ==============================================================================
+# Endpoints para DEPARTAMENTOS
+# ==============================================================================
+@router.post("/departamentos/", response_model=DepartamentoSchema, status_code=status.HTTP_201_CREATED, dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))], summary="Crear Departamento")
+def create_departamento(*, db: Session = Depends(deps.get_db), dep_in: DepartamentoCreate, current_user: UsuarioModel = Depends(deps.get_current_active_user)) -> Any:
+    existing = departamento_service.get_by_nombre(db, nombre=dep_in.nombre)
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Ya existe el departamento '{dep_in.nombre}'.")
+    
+    try:
+        departamento = departamento_service.create(db=db, obj_in=dep_in)
+        db.commit()
+        db.refresh(departamento)
+        return departamento
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creando departamento: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al crear el departamento.")
+
+@router.get("/departamentos/", response_model=List[DepartamentoSchema], dependencies=[PERM_VER_CATALOGOS], summary="Listar Departamentos")
+def read_departamentos(db: Session = Depends(deps.get_db), skip: int = 0, limit: int = 100, include_inactive: bool = False) -> Any:
+    if include_inactive:
+        return departamento_service.get_multi(db, skip=skip, limit=limit)
+    return departamento_service.get_multi_active(db, skip=skip, limit=limit)
+
+@router.get("/departamentos/{dep_id}", response_model=DepartamentoSchema, dependencies=[PERM_VER_CATALOGOS], summary="Obtener Departamento por ID")
+def read_departamento_by_id(dep_id: PyUUID, db: Session = Depends(deps.get_db)) -> Any:
+    return departamento_service.get_or_404(db, id=dep_id)
+
+@router.put("/departamentos/{dep_id}", response_model=DepartamentoSchema, dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))], summary="Actualizar Departamento")
+def update_departamento(*, db: Session = Depends(deps.get_db), dep_id: PyUUID, dep_in: DepartamentoUpdate, current_user: UsuarioModel = Depends(deps.get_current_active_user)) -> Any:
+    db_dep = departamento_service.get_or_404(db, id=dep_id)
+    if dep_in.nombre and dep_in.nombre != db_dep.nombre:
+        existing = departamento_service.get_by_nombre(db, nombre=dep_in.nombre)
+        if existing and existing.id != dep_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El nombre ya está en uso.")
+    
+    try:
+        updated_dep = departamento_service.update(db=db, db_obj=db_dep, obj_in=dep_in)
+        db.commit()
+        db.refresh(updated_dep)
+        return updated_dep
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error actualizando departamento: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al actualizar el departamento.")
+
+@router.delete("/departamentos/{dep_id}", response_model=Msg, dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))], summary="Eliminar Departamento")
+def delete_departamento(*, db: Session = Depends(deps.get_db), dep_id: PyUUID, current_user: UsuarioModel = Depends(deps.get_current_active_user)) -> Any:
+    try:
+        departamento_service.remove(db=db, id=dep_id)
+        db.commit()
+        return {"msg": "Departamento eliminado (o desactivado) correctamente."}
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El departamento está en uso y no puede ser eliminado físicamente.")
+
+# ==============================================================================
+# Endpoints para MARCAS
+# ==============================================================================
+@router.post("/marcas/", response_model=MarcaSchema, status_code=status.HTTP_201_CREATED, dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))], summary="Crear Marca")
+def create_marca(*, db: Session = Depends(deps.get_db), marca_in: MarcaCreate, current_user: UsuarioModel = Depends(deps.get_current_active_user)) -> Any:
+    existing = marca_service.get_by_nombre(db, nombre=marca_in.nombre)
+    if existing:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Ya existe la marca '{marca_in.nombre}'.")
+    
+    try:
+        marca = marca_service.create(db=db, obj_in=marca_in)
+        db.commit()
+        db.refresh(marca)
+        return marca
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error creando marca: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al crear la marca.")
+
+@router.get("/marcas/", response_model=List[MarcaSchema], dependencies=[PERM_VER_CATALOGOS], summary="Listar Marcas")
+def read_marcas(db: Session = Depends(deps.get_db), skip: int = 0, limit: int = 100, include_inactive: bool = False) -> Any:
+    if include_inactive:
+        return marca_service.get_multi(db, skip=skip, limit=limit)
+    return marca_service.get_multi_active(db, skip=skip, limit=limit)
+
+@router.get("/marcas/{marca_id}", response_model=MarcaSchema, dependencies=[PERM_VER_CATALOGOS], summary="Obtener Marca por ID")
+def read_marca_by_id(marca_id: PyUUID, db: Session = Depends(deps.get_db)) -> Any:
+    return marca_service.get_or_404(db, id=marca_id)
+
+@router.put("/marcas/{marca_id}", response_model=MarcaSchema, dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))], summary="Actualizar Marca")
+def update_marca(*, db: Session = Depends(deps.get_db), marca_id: PyUUID, marca_in: MarcaUpdate, current_user: UsuarioModel = Depends(deps.get_current_active_user)) -> Any:
+    db_marca = marca_service.get_or_404(db, id=marca_id)
+    if marca_in.nombre and marca_in.nombre != db_marca.nombre:
+        existing = marca_service.get_by_nombre(db, nombre=marca_in.nombre)
+        if existing and existing.id != marca_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El nombre ya está en uso.")
+    
+    try:
+        updated_marca = marca_service.update(db=db, db_obj=db_marca, obj_in=marca_in)
+        db.commit()
+        db.refresh(updated_marca)
+        return updated_marca
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error actualizando marca: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error al actualizar la marca.")
+
+@router.delete("/marcas/{marca_id}", response_model=Msg, dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))], summary="Eliminar Marca")
+def delete_marca(*, db: Session = Depends(deps.get_db), marca_id: PyUUID, current_user: UsuarioModel = Depends(deps.get_current_active_user)) -> Any:
+    try:
+        marca_service.remove(db=db, id=marca_id)
+        db.commit()
+        return {"msg": "Marca eliminada correctamente."}
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="La marca está en uso y no puede ser eliminada físicamente.")

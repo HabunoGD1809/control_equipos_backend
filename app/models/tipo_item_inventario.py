@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .proveedor import Proveedor
     from .inventario_stock import InventarioStock
     from .inventario_movimiento import InventarioMovimiento
+    from .marca import Marca
 
 
 class TipoItemInventario(Base):
@@ -27,7 +28,8 @@ class TipoItemInventario(Base):
     descripcion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     categoria: Mapped[str] = mapped_column(String(50), index=True)
     unidad_medida: Mapped[str] = mapped_column(String(50), default='Unidad')
-    marca: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    marca_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("marcas.id", ondelete="SET NULL"), nullable=True, index=True)
+    marca_rel: Mapped[Optional["Marca"]] = relationship("Marca", back_populates="items_inventario", lazy="selectin")
     modelo: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     sku: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True, index=True)
     codigo_barras: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True, index=True)

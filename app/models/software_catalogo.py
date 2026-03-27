@@ -2,7 +2,7 @@ import datetime
 import uuid
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import Column, String, Text, DateTime, func, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, String, Text, DateTime, func, UniqueConstraint
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -10,6 +10,7 @@ from app.db.base import Base
 
 if TYPE_CHECKING:
     from .licencia_software import LicenciaSoftware # noqa: F401
+    from .marca import Marca
 
 
 class SoftwareCatalogo(Base):
@@ -25,9 +26,10 @@ class SoftwareCatalogo(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nombre: Mapped[str] = mapped_column(String(255), index=True)
     version: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
-    fabricante: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     descripcion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     categoria: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    marca_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("marcas.id", ondelete="SET NULL"), nullable=True, index=True)
+    marca_rel: Mapped[Optional["Marca"]] = relationship("Marca", back_populates="software", lazy="selectin")
     tipo_licencia: Mapped[str] = mapped_column(String(50))
     metrica_licenciamiento: Mapped[str] = mapped_column(String(50))
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

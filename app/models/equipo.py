@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from .reserva_equipo import ReservaEquipo
     from .inventario_movimiento import InventarioMovimiento
     from .ubicacion import Ubicacion
+    from .marca import Marca
 
 class Equipo(Base):
     __tablename__ = "equipos"
@@ -33,8 +34,10 @@ class Equipo(Base):
     codigo_interno: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True, index=True)
     estado_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("estados_equipo.id"), index=True)
     ubicacion_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("ubicaciones.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    marca_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("marcas.id", ondelete="SET NULL"), nullable=True, index=True)
+    marca_rel: Mapped[Optional["Marca"]] = relationship("Marca", back_populates="equipos", lazy="selectin")
 
-    marca: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     modelo: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
     fecha_adquisicion: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     fecha_puesta_marcha: Mapped[Optional[date]] = mapped_column(Date, nullable=True)

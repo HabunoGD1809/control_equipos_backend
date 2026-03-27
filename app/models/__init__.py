@@ -26,6 +26,8 @@ from .usuario import Usuario
 from .refresh_token import RefreshToken
 from .ubicacion import Ubicacion
 from .reporte import Reporte
+from .departamento import Departamento
+from .marca import Marca
 
 
 __all__ = [
@@ -58,4 +60,6 @@ __all__ = [
     "RefreshToken",
     "Ubicacion",
     "Reporte",
+    "Departamento",
+    "Marca",
 ]

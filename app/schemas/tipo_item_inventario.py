@@ -1,10 +1,11 @@
 import uuid
-from typing import Optional, List
+from typing import Optional
 
 from pydantic import BaseModel, Field, ConfigDict
 
 from .enums import UnidadMedidaEnum
 from .proveedor import ProveedorSimple
+from .marca import MarcaSimple
 
 
 # ===============================================================
@@ -35,7 +36,7 @@ class TipoItemInventarioBase(BaseModel):
         ge=0,
         description="Nivel mínimo de stock antes de generar una alerta"
     )
-    marca: Optional[str] = Field(None, max_length=100, description="Marca del ítem")
+    marca_id: Optional[uuid.UUID] = Field(None, description="ID de la marca del ítem")
     modelo: Optional[str] = Field(None, max_length=100, description="Modelo específico del ítem")
     sku: Optional[str] = Field(None, max_length=100, description="Stock Keeping Unit (SKU) único para el ítem")
     codigo_barras: Optional[str] = Field(None, max_length=100, description="Código de barras del ítem")
@@ -63,7 +64,7 @@ class TipoItemInventarioUpdate(BaseModel):
     descripcion: Optional[str] = None
     unidad_medida: Optional[UnidadMedidaEnum] = None
     stock_minimo: Optional[int] = Field(None, ge=0)
-    marca: Optional[str] = Field(None, max_length=100)
+    marca_id: Optional[uuid.UUID] = None
     modelo: Optional[str] = Field(None, max_length=100)
     sku: Optional[str] = Field(None, max_length=100)
     codigo_barras: Optional[str] = Field(None, max_length=100)
@@ -89,6 +90,7 @@ class TipoItemInventario(TipoItemInventarioInDBBase):
     cargadas desde la base de datos.
     """
     proveedor_preferido: Optional[ProveedorSimple] = None
+    marca_rel: Optional[MarcaSimple] = None
 
 
 # ===============================================================
@@ -100,7 +102,7 @@ class TipoItemInventarioSimple(BaseModel):
     nombre: str
     unidad_medida: UnidadMedidaEnum
     sku: Optional[str] = None
-    marca: Optional[str] = None
+    marca_id: Optional[uuid.UUID] = None
     modelo: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -111,4 +113,3 @@ class TipoItemInventarioSimple(BaseModel):
 class TipoItemInventarioConStock(TipoItemInventario):
     """Extiende el schema base para incluir el stock total actual en la respuesta."""
     stock_total_actual: int
-    

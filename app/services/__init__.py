@@ -3,9 +3,6 @@ Módulo de Servicios
 
 Este paquete contiene la lógica de negocio y las interacciones
 con la base de datos para las diferentes entidades de la aplicación.
-
-Cada módulo define un servicio (usualmente una instancia de una clase)
-que encapsula las operaciones CRUD y específicas para un modelo ORM.
 """
 
 from .permiso import permiso_service
@@ -31,6 +28,8 @@ from .notificacion import notificacion_service
 from .login_log import login_log_service
 from .audit_log import audit_log_service
 from .backup_log import backup_log_service
+from .departamento import departamento_service
+from .marca import marca_service
 
 __all__ = [
     "permiso_service",
@@ -56,4 +55,6 @@ __all__ = [
     "login_log_service",
     "audit_log_service",
     "backup_log_service",
+    "departamento_service",
+    "marca_service",
 ]

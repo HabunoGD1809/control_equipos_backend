@@ -5,6 +5,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field, ConfigDict
 
 from .enums import TipoLicenciaSoftwareEnum, MetricaLicenciamientoEnum
+from .marca import MarcaSimple
 
 # ===============================================================
 # Schema Base
@@ -13,7 +14,7 @@ class SoftwareCatalogoBase(BaseModel):
     """Campos base que definen un producto en el catálogo de software."""
     nombre: str = Field(..., max_length=255, description="Nombre del producto de software")
     version: Optional[str] = Field(None, max_length=50, description="Versión específica (ej: 2023, 11, CC)")
-    fabricante: Optional[str] = Field(None, max_length=100, description="Fabricante del software")
+    marca_id: Optional[uuid.UUID] = Field(None, description="ID de la marca o fabricante del software")
     descripcion: Optional[str] = Field(None, description="Descripción detallada del software")
     categoria: Optional[str] = Field(None, max_length=100, description="Categoría (ej: Ofimática, Diseño, SO)")
 
@@ -37,7 +38,7 @@ class SoftwareCatalogoUpdate(BaseModel):
     """
     nombre: Optional[str] = Field(None, max_length=255)
     version: Optional[str] = Field(None, max_length=50)
-    fabricante: Optional[str] = Field(None, max_length=100)
+    marca_id: Optional[uuid.UUID] = None # <-- Reemplaza fabricante de texto
     descripcion: Optional[str] = None
     categoria: Optional[str] = Field(None, max_length=100)
     tipo_licencia: Optional[TipoLicenciaSoftwareEnum] = None
@@ -59,7 +60,7 @@ class SoftwareCatalogoInDBBase(SoftwareCatalogoBase):
 # ===============================================================
 class SoftwareCatalogo(SoftwareCatalogoInDBBase):
     """Schema para devolver al cliente. Expone todos los campos del modelo de BD."""
-    pass
+    marca_rel: Optional[MarcaSimple] = None
 
 # ===============================================================
 # Schema Simple (para listas o referencias)
@@ -69,6 +70,6 @@ class SoftwareCatalogoSimple(BaseModel):
     id: uuid.UUID
     nombre: str
     version: Optional[str] = None
-    fabricante: Optional[str] = None
+    marca_id: Optional[uuid.UUID] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -29,6 +29,12 @@ from .tecnico import Tecnico, TecnicoCreate, TecnicoUpdate, TecnicoSimple
 # Ubicaciones (Catálogo)
 from .ubicacion import UbicacionRead, UbicacionCreate, UbicacionUpdate, UbicacionSimple
 
+# Departamentos (Catálogo)
+from .departamento import DepartamentoRead, DepartamentoCreate, DepartamentoUpdate, DepartamentoSimple
+
+# Marcas (Catálogo)
+from .marca import MarcaRead, MarcaCreate, MarcaUpdate, MarcaSimple
+
 # Equipo y Componentes
 from .equipo import (
     EquipoBase,
@@ -130,6 +136,8 @@ __all__ = [
     "TipoMantenimiento", "TipoMantenimientoCreate", "TipoMantenimientoUpdate",
     "Tecnico", "TecnicoCreate", "TecnicoUpdate", "TecnicoSimple",
     "UbicacionRead", "UbicacionCreate", "UbicacionUpdate", "UbicacionSimple",
+    "DepartamentoRead", "DepartamentoCreate", "DepartamentoUpdate", "DepartamentoSimple",
+    "MarcaRead", "MarcaCreate", "MarcaUpdate", "MarcaSimple",
     "EquipoCreate", "EquipoUpdate", "EquipoSimple", "EquipoSearchResult", "GlobalSearchResult", "EquipoRead", #"Equipo",
     "EquipoComponente", "EquipoComponenteCreate", "EquipoComponenteUpdate", "ComponenteInfo", "PadreInfo",
     "Movimiento", "MovimientoCreate", "MovimientoUpdate",

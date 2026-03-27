@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field, ConfigDict
 
 from .estado_equipo import EstadoEquipoSimple
 from .proveedor import ProveedorSimple
+from .marca import MarcaSimple
+from .ubicacion import UbicacionSimple
 
 # ===============================================================
 # Schema Base
@@ -18,8 +20,7 @@ class EquipoBase(BaseModel):
     codigo_interno: Optional[str] = Field(None, max_length=100, description="Código de activo fijo de la empresa")
     estado_id: uuid.UUID = Field(..., description="ID del estado actual del equipo")
     ubicacion_id: Optional[uuid.UUID] = None
-    # ubicacion_actual: Optional[str] = Field(None, description="Descripción de la ubicación actual (sala, edificio, usuario)")
-    marca: Optional[str] = Field(None, max_length=100)
+    marca_id: Optional[uuid.UUID] = None
     modelo: Optional[str] = Field(None, max_length=100)
     fecha_adquisicion: Optional[date] = None
     fecha_puesta_marcha: Optional[date] = Field(None, description="Fecha en que el equipo entró en operación")
@@ -47,7 +48,7 @@ class EquipoUpdate(BaseModel):
     nombre: Optional[str] = Field(None, max_length=255)
     estado_id: Optional[uuid.UUID] = None
     ubicacion_id: Optional[uuid.UUID] = None
-    marca: Optional[str] = Field(None, max_length=100)
+    marca_id: Optional[uuid.UUID] = None
     modelo: Optional[str] = Field(None, max_length=100)
     fecha_adquisicion: Optional[date] = None
     fecha_puesta_marcha: Optional[date] = None
@@ -77,7 +78,9 @@ class EquipoRead(EquipoInDBBase):
     """
     estado: Optional[EstadoEquipoSimple] = None
     proveedor: Optional[ProveedorSimple] = None
-    ubicacion_actual: Optional[str] = None # Mantenemos esto en el read para que el frontend no se rompa (lo calcularemos en el servicio)
+    marca_rel: Optional[MarcaSimple] = None
+    ubicacion: Optional[UbicacionSimple] = None
+    ubicacion_actual: Optional[str] = None 
 
 # ===============================================================
 # Schema Simple (para listas o referencias)
@@ -87,7 +90,7 @@ class EquipoSimple(BaseModel):
     id: uuid.UUID
     nombre: str
     numero_serie: str
-    marca: Optional[str] = None
+    marca_id: Optional[uuid.UUID] = None
     modelo: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
@@ -100,7 +103,7 @@ class EquipoSearchResult(BaseModel):
     id: uuid.UUID
     nombre: str
     numero_serie: str
-    marca: Optional[str] = None
+    marca_id: Optional[uuid.UUID] = None
     modelo: Optional[str] = None
     ubicacion_actual: Optional[str] = None
     estado_nombre: Optional[str] = None

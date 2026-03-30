@@ -21,6 +21,7 @@ class MovimientoReciente(BaseModel):
 # Schema principal para los datos del dashboard
 class DashboardData(BaseModel):
     total_equipos: int = Field(..., description="Número total de equipos registrados")
+    total_valor_activos: float = Field(0.0, description="Suma total del valor de adquisición de todos los equipos")
     equipos_por_estado: List[EquipoPorEstado] = Field(..., description="Desglose de equipos por cada estado")
     mantenimientos_proximos_count: int = Field(..., ge=0, description="Número de mantenimientos próximos a vencer (ej: 30 días)")
     licencias_por_expirar_count: int = Field(..., ge=0, description="Número de licencias próximas a expirar (ej: 30 días)")

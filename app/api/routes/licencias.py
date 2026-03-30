@@ -239,9 +239,11 @@ def read_licencias(
              status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(deps.PermissionChecker([perms.PERM_ASIGNAR_LICENCIAS]))],
              summary="Asignar una Licencia",
-            #  tags=["licencias", "asignaciones"]
              )
-@router.post("/asignaciones/", include_in_schema=False,
+@router.post("/asignaciones/", 
+             response_model=AsignacionLicencia,
+             include_in_schema=False,
+             status_code=status.HTTP_201_CREATED,
              dependencies=[Depends(deps.PermissionChecker([perms.PERM_ASIGNAR_LICENCIAS]))])
 def create_asignacion(
     *,
@@ -279,7 +281,9 @@ def create_asignacion(
             dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))],
             summary="Listar Asignaciones de Licencias",
             )
-@router.get("/asignaciones/", include_in_schema=False,
+@router.get("/asignaciones/", 
+            response_model=List[AsignacionLicencia],
+            include_in_schema=False,
             dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))])
 def read_asignaciones(
     db: Session = Depends(deps.get_db),

@@ -1,5 +1,6 @@
 import logging
-from typing import List
+import asyncio
+from typing import List, Any, Union
 from uuid import UUID
 from datetime import datetime, timezone 
 
@@ -9,11 +10,22 @@ from sqlalchemy.engine import CursorResult
 
 from app.models.notificacion import Notificacion
 from app.schemas.notificacion import NotificacionUpdate, NotificacionCreateInternal
+from app.core.event_broker import broker
 from .base_service import BaseService
 
 logger = logging.getLogger(__name__)
 
 class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, NotificacionUpdate]):
+
+    def _notify_broker(self, db: Session, usuario_id: UUID):
+        """Función auxiliar para avisar al SSE de forma asíncrona sin bloquear SQLAlchemy."""
+        unread_count = self.get_unread_count_by_user(db, usuario_id=usuario_id)
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(broker.publish(str(usuario_id), unread_count))
+        except RuntimeError:
+            # Ignorar si se ejecuta fuera de un event loop (ej. scripts síncronos de consola)
+            pass
 
     def create_internal(self, db: Session, *, obj_in: NotificacionCreateInternal) -> Notificacion:
         logger.debug(f"Creando notificación interna para Usuario ID: {obj_in.usuario_id}, Mensaje: '{obj_in.mensaje[:30]}...'")
@@ -28,6 +40,9 @@ class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, 
         
         db_notificacion = super().create(db, obj_in=temp_obj_in)
         logger.info(f"Notificación interna para Usuario ID {db_notificacion.usuario_id} preparada para ser creada.")
+        
+        # Avisar al frontend
+        self._notify_broker(db, db_notificacion.usuario_id)
         return db_notificacion
 
     def mark_as(self, db: Session, *, db_obj: Notificacion, read_status: bool) -> Notificacion:
@@ -47,6 +62,9 @@ class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, 
         db.add(db_obj)
         
         logger.info(f"Notificación ID {notif_id} preparada para ser actualizada a leido={read_status}.")
+        
+        # Avisar al frontend
+        self._notify_broker(db, db_obj.usuario_id) # type: ignore
         return db_obj
 
     def mark_all_as_read_for_user(self, db: Session, *, usuario_id: UUID) -> int:
@@ -59,7 +77,22 @@ class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, 
         result: CursorResult = db.execute(statement)  # type: ignore
         affected_rows = result.rowcount
         logger.info(f"{affected_rows} notificación(es) para Usuario ID {usuario_id} preparadas para ser marcadas como leídas.")
+        
+        # Avisar al frontend si hubo cambios
+        if affected_rows > 0:
+            self._notify_broker(db, usuario_id)
+            
         return affected_rows
+
+    def remove(self, db: Session, *, id: Union[UUID, int]) -> Notificacion:
+        """Sobrescribimos remove para avisar al frontend al borrar."""
+        obj = db.query(self.model).get(id)
+        if obj:
+            usuario_id = obj.usuario_id # type: ignore
+            obj = super().remove(db, id=id)
+            self._notify_broker(db, usuario_id)
+            return obj
+        return super().remove(db, id=id)
 
     def get_multi_by_user(
         self, db: Session, *, usuario_id: UUID, solo_no_leidas: bool = False, skip: int = 0, limit: int = 50

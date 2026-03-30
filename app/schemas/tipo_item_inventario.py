@@ -104,6 +104,8 @@ class TipoItemInventarioSimple(BaseModel):
     sku: Optional[str] = None
     marca_id: Optional[uuid.UUID] = None
     modelo: Optional[str] = None
+    
+    marca_rel: Optional[MarcaSimple] = None
 
     model_config = ConfigDict(from_attributes=True)
 

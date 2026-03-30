@@ -71,6 +71,37 @@ def upgrade() -> None:
     op.drop_column('tipos_item_inventario', 'marca', schema='control_equipos')
     op.drop_column('ubicaciones', 'departamento', schema='control_equipos')
 
+    # 4. Actualizar el trigger de búsqueda de equipos
+    op.execute("""
+    CREATE OR REPLACE FUNCTION control_equipos.actualizar_busqueda_equipo()
+    RETURNS TRIGGER AS $$
+    DECLARE
+        v_ubicacion_nombre TEXT := '';
+        v_marca_nombre TEXT := '';
+    BEGIN
+        IF NEW.ubicacion_id IS NOT NULL THEN
+            SELECT nombre INTO v_ubicacion_nombre FROM control_equipos.ubicaciones WHERE id = NEW.ubicacion_id;
+        END IF;
+
+        IF NEW.marca_id IS NOT NULL THEN
+            SELECT nombre INTO v_marca_nombre FROM control_equipos.marcas WHERE id = NEW.marca_id;
+        END IF;
+
+        NEW.texto_busqueda =
+            setweight(to_tsvector('spanish', COALESCE(NEW.nombre, '')), 'A') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.numero_serie, '')), 'A') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.codigo_interno, '')), 'A') ||
+            setweight(to_tsvector('spanish', COALESCE(v_marca_nombre, '')), 'B') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.modelo, '')), 'B') ||
+            setweight(to_tsvector('spanish', COALESCE(v_ubicacion_nombre, '')), 'C') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.centro_costo, '')), 'C') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.notas, '')), 'D');
+
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+    """)
+
 
 def downgrade() -> None:
     """Downgrade schema."""
@@ -106,3 +137,29 @@ def downgrade() -> None:
     op.drop_table('marcas', schema='control_equipos')
     op.drop_index(op.f('ix_control_equipos_departamentos_nombre'), table_name='departamentos', schema='control_equipos')
     op.drop_table('departamentos', schema='control_equipos')
+
+    # 4. Revertir el trigger a su estado original
+    op.execute("""
+    CREATE OR REPLACE FUNCTION control_equipos.actualizar_busqueda_equipo()
+    RETURNS TRIGGER AS $$
+    DECLARE
+        v_ubicacion_nombre TEXT := '';
+    BEGIN
+        IF NEW.ubicacion_id IS NOT NULL THEN
+            SELECT nombre INTO v_ubicacion_nombre FROM control_equipos.ubicaciones WHERE id = NEW.ubicacion_id;
+        END IF;
+
+        NEW.texto_busqueda =
+            setweight(to_tsvector('spanish', COALESCE(NEW.nombre, '')), 'A') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.numero_serie, '')), 'A') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.codigo_interno, '')), 'A') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.marca, '')), 'B') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.modelo, '')), 'B') ||
+            setweight(to_tsvector('spanish', COALESCE(v_ubicacion_nombre, '')), 'C') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.centro_costo, '')), 'C') ||
+            setweight(to_tsvector('spanish', COALESCE(NEW.notas, '')), 'D');
+
+        RETURN NEW;
+    END;
+    $$ LANGUAGE plpgsql;
+    """)

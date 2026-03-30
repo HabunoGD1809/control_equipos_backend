@@ -48,13 +48,13 @@ class TipoItemInventario(Base):
     stock_ubicaciones: Mapped[List["InventarioStock"]] = relationship(
         "InventarioStock",
         back_populates="tipo_item",
-        lazy="selectin",
+        lazy="noload",
         cascade="all, delete-orphan"
     )
     movimientos_inventario: Mapped[List["InventarioMovimiento"]] = relationship(
         "InventarioMovimiento",
         back_populates="tipo_item",
-        lazy="selectin"
+        lazy="noload"
     )
 
     def __repr__(self) -> str:

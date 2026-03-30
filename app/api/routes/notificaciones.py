@@ -3,45 +3,54 @@ import asyncio
 from typing import Any, List, Dict
 from uuid import UUID as PyUUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.db.session import SessionLocal
 from app.schemas.notificacion import Notificacion, NotificacionUpdate
 from app.schemas.common import Msg
 from app.services.notificacion import notificacion_service
 from app.models.usuario import Usuario as UsuarioModel
+from app.core.event_broker import broker
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.get("/stream")
 async def stream_notificaciones(
+    request: Request,
     current_user: UsuarioModel = Depends(deps.get_current_user_sse),
     db: Session = Depends(deps.get_db)
 ):
     """
-    Streaming SSE.
-    Mantiene una conexión abierta y empuja un evento hacia el frontend
-    cada vez que detecta un cambio en el número de notificaciones no leídas.
+    Streaming SSE (Pub/Sub).
+    La conexión se mantiene dormida y solo consume recursos cuando
+    el broker empuja un nuevo evento.
     """
+    user_id_str = str(current_user.id)
+    queue = broker.subscribe(user_id_str)
+
     async def event_generator():
-        last_count = -1
-        while True:
-            try:
-                # Instanciamos un generador local para no bloquear la DB permanentemente
-                with SessionLocal() as session:
-                    count = notificacion_service.get_unread_count_by_user(session, usuario_id=current_user.id)
-                    
-                    if count != last_count:
-                        yield f"event: update\ndata: {count}\n\n"
-                        last_count = count
-            except Exception as e:
-                logger.error(f"Error en SSE Stream para el usuario {current_user.nombre_usuario}: {e}")
+        try:
+            initial_count = notificacion_service.get_unread_count_by_user(db, usuario_id=current_user.id)
+            yield f"event: update\ndata: {initial_count}\n\n"
+
+            while True:
+                if await request.is_disconnected():
+                    logger.debug(f"Cliente SSE desconectado: {user_id_str}")
+                    break
                 
-            await asyncio.sleep(5)
+                try:
+                    new_count = await asyncio.wait_for(queue.get(), timeout=5.0)
+                    yield f"event: update\ndata: {new_count}\n\n"
+                except asyncio.TimeoutError:
+                    continue
+                
+        except asyncio.CancelledError:
+            logger.debug(f"Conexión SSE cancelada (CancelledError) para {user_id_str}")
+        finally:
+            broker.unsubscribe(user_id_str, queue)
 
     return StreamingResponse(
         event_generator(), 

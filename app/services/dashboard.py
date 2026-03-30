@@ -112,9 +112,13 @@ class DashboardService:
         result_movs = db.execute(stmt_movs)
         movimientos_recientes = [MovimientoReciente(**row._mapping) for row in result_movs] # type: ignore
 
+        stmt_valor_activos = select(sql_func.sum(Equipo.valor_adquisicion))
+        total_valor_calc = db.execute(stmt_valor_activos).scalar_one_or_none() or 0
+
         # --- CONSTRUCCIÓN DE LA RESPUESTA ---
         dashboard_data = DashboardData(
             total_equipos=total_equipos,
+            total_valor_activos=float(total_valor_calc), # 👇 Agregado aquí
             equipos_por_estado=equipos_estado_list,
             mantenimientos_proximos_count=mantenimientos_proximos_count,
             licencias_por_expirar_count=licencias_por_expirar_count,

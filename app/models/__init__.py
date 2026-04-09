@@ -28,6 +28,7 @@ from .ubicacion import Ubicacion
 from .reporte import Reporte
 from .departamento import Departamento
 from .marca import Marca
+from .empleado import Empleado
 
 
 __all__ = [
@@ -62,4 +63,5 @@ __all__ = [
     "Reporte",
     "Departamento",
     "Marca",
+    "Empleado",
 ]

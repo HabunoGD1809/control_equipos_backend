@@ -291,10 +291,10 @@ def request_password_reset(
     """
     logger.info(
         f"Admin '{current_user.nombre_usuario}' esta solicitando reseteo de "
-        f"contrasena para usuario '{request_data.username}'."
+        f"contrasena para usuario '{request_data.username_or_email}'."
     )
     try:
-        user = usuario_service.initiate_password_reset(db, username=request_data.username)
+        user = usuario_service.initiate_password_reset(db, username_or_email=request_data.username_or_email)
 
         nueva_notificacion = Notificacion(
             usuario_id=user.id,
@@ -313,7 +313,7 @@ def request_password_reset(
     except Exception as e:
         db.rollback()
         logger.error(
-            f"Error al iniciar el reseteo de contrasena para '{request_data.username}'. "
+            f"Error al iniciar el reseteo de contrasena para '{request_data.username_or_email}'. "
             f"Admin: '{current_user.nombre_usuario}'. Error: {e}",
             exc_info=True
         )
@@ -346,11 +346,11 @@ def confirm_password_reset(
     Permite a un usuario establecer una nueva contrasena utilizando el token
     que le fue proporcionado por un administrador.
     """
-    logger.info(f"Intento de confirmar reseteo de contrasena para usuario '{reset_data.username}'.")
+    logger.info(f"Intento de confirmar reseteo de contrasena para usuario o correo '{reset_data.username_or_email}'.")
     try:
         usuario_service.confirm_password_reset(
             db,
-            username=reset_data.username,
+            username_or_email=reset_data.username_or_email,
             token=reset_data.token,
             new_password=reset_data.new_password
         )
@@ -361,7 +361,7 @@ def confirm_password_reset(
     except Exception as e:
         db.rollback()
         logger.error(
-            f"Error al confirmar el reseteo de contrasena para '{reset_data.username}'. Error: {e}",
+            f"Error al confirmar el reseteo de contrasena para '{reset_data.username_or_email}'. Error: {e}",
             exc_info=True
         )
         raise HTTPException(

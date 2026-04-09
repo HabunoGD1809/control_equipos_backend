@@ -9,6 +9,7 @@ from .estado_equipo import EstadoEquipoSimple
 from .proveedor import ProveedorSimple
 from .marca import MarcaSimple
 from .ubicacion import UbicacionSimple
+from .empleado import EmpleadoSimple
 
 # ===============================================================
 # Schema Base
@@ -20,6 +21,7 @@ class EquipoBase(BaseModel):
     codigo_interno: Optional[str] = Field(None, max_length=100, description="Código de activo fijo de la empresa")
     estado_id: uuid.UUID = Field(..., description="ID del estado actual del equipo")
     ubicacion_id: Optional[uuid.UUID] = None
+    empleado_asignado_id: Optional[uuid.UUID] = Field(None, description="ID del Empleado (Custodio) que tiene el equipo")
     marca_id: Optional[uuid.UUID] = None
     modelo: Optional[str] = Field(None, max_length=100)
     fecha_adquisicion: Optional[date] = None
@@ -48,6 +50,7 @@ class EquipoUpdate(BaseModel):
     nombre: Optional[str] = Field(None, max_length=255)
     estado_id: Optional[uuid.UUID] = None
     ubicacion_id: Optional[uuid.UUID] = None
+    empleado_asignado_id: Optional[uuid.UUID] = None
     marca_id: Optional[uuid.UUID] = None
     modelo: Optional[str] = Field(None, max_length=100)
     fecha_adquisicion: Optional[date] = None
@@ -80,6 +83,7 @@ class EquipoRead(EquipoInDBBase):
     proveedor: Optional[ProveedorSimple] = None
     marca_rel: Optional[MarcaSimple] = None
     ubicacion: Optional[UbicacionSimple] = None
+    empleado_asignado: Optional[EmpleadoSimple] = None
     ubicacion_actual: Optional[str] = None 
 
 # ===============================================================

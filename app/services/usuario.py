@@ -231,31 +231,42 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         logger.info(f"Contraseña actualizada exitosamente para el usuario '{user.nombre_usuario}'.")
         return user
 
-    def initiate_password_reset(self, db: Session, *, username: str) -> Usuario:
+    def initiate_password_reset(self, db: Session, *, username_or_email: str) -> Usuario:
         """
         Genera y guarda un token de reseteo temporal para un usuario.
+        Acepta nombre de usuario o correo electrónico.
         NO realiza db.commit().
         """
-        user = self.get_by_username(db, username=username)
+        user: Optional[Usuario] = None
+        if "@" in username_or_email:
+            user = self.get_by_email(db, email=username_or_email)
+        else:
+            user = self.get_by_username(db, username=username_or_email)
+            
         if not user:
-            logger.error(f"Intento de reseteo de contraseña para usuario no existente: {username}")
+            logger.error(f"Intento de reseteo de contraseña para usuario no existente: {username_or_email}")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
         
         user.token_temporal = uuid4()
         user.token_expiracion = datetime.now(timezone.utc) + timedelta(minutes=15) # Token válido por 15 minutos
         
         db.add(user)
-        logger.info(f"Token de reseteo de contraseña generado para el usuario '{username}'.")
+        logger.info(f"Token de reseteo de contraseña generado para el usuario '{user.nombre_usuario}'.")
         return user
 
     def confirm_password_reset(
-        self, db: Session, *, username: str, token: UUID, new_password: str
+        self, db: Session, *, username_or_email: str, token: UUID, new_password: str
     ) -> Usuario:
         """
         Verifica el token y actualiza la contraseña del usuario.
+        Acepta nombre de usuario o correo electrónico.
         NO realiza db.commit().
         """
-        user = self.get_by_username(db, username=username)
+        user: Optional[Usuario] = None
+        if "@" in username_or_email:
+            user = self.get_by_email(db, email=username_or_email)
+        else:
+            user = self.get_by_username(db, username=username_or_email)
 
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
@@ -269,12 +280,12 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         user.hashed_password = get_password_hash(new_password)
         user.token_temporal = None
         user.token_expiracion = None
-        user.requiere_cambio_contrasena = False # El usuario acaba de establecer su contraseña
-        user.bloqueado = False # Desbloquear al usuario si estaba bloqueado
+        user.requiere_cambio_contrasena = False 
+        user.bloqueado = False 
         user.intentos_fallidos = 0
 
         db.add(user)
-        logger.info(f"Contraseña reseteada exitosamente para el usuario '{username}'.")
+        logger.info(f"Contraseña reseteada exitosamente para el usuario '{user.nombre_usuario}'.")
         return user
 
 usuario_service = UsuarioService(Usuario)

@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from .equipo import Equipo
     from .usuario import Usuario
     from .ubicacion import Ubicacion
+    from .empleado import Empleado
 
 class Movimiento(Base):
     """
@@ -32,6 +33,7 @@ class Movimiento(Base):
     
     proposito: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     autorizado_por: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="SET NULL"), nullable=True, index=True)
+    empleado_destino_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("empleados.id", ondelete="SET NULL"), nullable=True, index=True)
     recibido_por: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     observaciones: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     estado: Mapped[str] = mapped_column(String(50), default='Completado', index=True)
@@ -66,6 +68,12 @@ class Movimiento(Base):
     ubicacion_destino: Mapped[Optional["Ubicacion"]] = relationship(
         "Ubicacion",
         foreign_keys=[ubicacion_destino_id],
+        lazy="selectin"
+    )
+    empleado_destino: Mapped[Optional["Empleado"]] = relationship(
+        "Empleado",
+        foreign_keys=[empleado_destino_id],
+        back_populates="movimientos_recibidos",
         lazy="selectin"
     )
 

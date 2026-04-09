@@ -11,6 +11,9 @@ from .rol import Rol, RolCreate, RolUpdate
 # Usuario
 from .usuario import Usuario, UsuarioCreate, UsuarioUpdate, UsuarioSimple
 
+# Empleados
+from .empleado import EmpleadoRead, EmpleadoCreate, EmpleadoUpdate, EmpleadoSimple
+
 # Proveedor
 from .proveedor import Proveedor, ProveedorCreate, ProveedorUpdate, ProveedorSimple
 
@@ -130,6 +133,7 @@ __all__ = [
     "Permiso", "PermisoCreate", "PermisoUpdate",
     "Rol", "RolCreate", "RolUpdate",
     "Usuario", "UsuarioCreate", "UsuarioUpdate", "UsuarioSimple",
+    "EmpleadoRead", "EmpleadoCreate", "EmpleadoUpdate", "EmpleadoSimple",
     "Proveedor", "ProveedorCreate", "ProveedorUpdate", "ProveedorSimple",
     "EstadoEquipo", "EstadoEquipoCreate", "EstadoEquipoUpdate", "EstadoEquipoSimple",
     "TipoDocumento", "TipoDocumentoCreate", "TipoDocumentoUpdate",

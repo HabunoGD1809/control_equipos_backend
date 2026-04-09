@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Optional
 
 from .departamento import DepartamentoSimple
+from .empleado import EmpleadoSimple
 
 # ===============================================================
 # Schema para Rol - Para respuestas anidadas
@@ -26,13 +27,12 @@ class UsuarioBase(BaseModel):
     email: Optional[EmailStr] = Field(None, description="Correo electrónico del usuario")
     avatar_url: Optional[str] = Field(None, description="URL de la foto de perfil en la nube")
     departamento_id: Optional[uuid.UUID] = Field(None, description="ID del departamento al que pertenece el usuario")
-    is_active: Optional[bool] = Field(True, description="Indica si el usuario está activo (Soft Delete)")
+    empleado_id: Optional[uuid.UUID] = Field(None, description="ID del perfil de Empleado (RRHH) vinculado a este usuario")
 
 class UsuarioCreate(UsuarioBase):
     """Schema para crear un nuevo usuario. Requiere contraseña y rol."""
     password: str = Field(..., min_length=8, description="Contraseña para el nuevo usuario")
     rol_id: uuid.UUID = Field(..., description="ID del rol a asignar al usuario")
-    departamento_id: Optional[uuid.UUID] = None
 
 class UsuarioUpdate(BaseModel):
     """
@@ -44,9 +44,9 @@ class UsuarioUpdate(BaseModel):
     password: Optional[str] = Field(None, min_length=8, description="Proporcionar solo si se desea cambiar la contraseña")
     rol_id: Optional[uuid.UUID] = None
     departamento_id: Optional[uuid.UUID] = None
+    empleado_id: Optional[uuid.UUID] = None
     intentos_fallidos: Optional[int] = None
     bloqueado: Optional[bool] = None
-    is_active: Optional[bool] = None
     requiere_cambio_contrasena: Optional[bool] = None
     avatar_url: Optional[str] = None
 
@@ -80,6 +80,7 @@ class Usuario(UsuarioBase):
     requiere_cambio_contrasena: bool
     rol: Rol
     departamento_rel: Optional[DepartamentoSimple] = None
+    empleado_rel: Optional[EmpleadoSimple] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -93,6 +94,5 @@ class UsuarioSimple(BaseModel):
     nombre_usuario: str
     email: Optional[EmailStr] = None
     avatar_url: Optional[str] = None
-    is_active: Optional[bool] = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -6,7 +6,7 @@ class PasswordResetRequest(BaseModel):
     Schema para la petición que hace un administrador para iniciar el reseteo
     de contraseña de otro usuario.
     """
-    username: str = Field(..., description="Nombre de usuario del cual se reseteará la contraseña.")
+    username_or_email: str = Field(..., description="Nombre de usuario o correo electrónico del cual se reseteará la contraseña.")
 
 
 class PasswordResetResponse(BaseModel):
@@ -24,7 +24,7 @@ class PasswordResetConfirm(BaseModel):
     Schema para la petición que hace el usuario final para confirmar el cambio
     de contraseña usando el token.
     """
-    username: str = Field(..., description="Tu nombre de usuario.")
+    username_or_email: str = Field(..., description="Tu nombre de usuario o correo electrónico.")
     token: uuid.UUID = Field(..., description="El token de reseteo que te proporcionó el administrador.")
     new_password: str = Field(..., min_length=8, description="Tu nueva contraseña.")
 

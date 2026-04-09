@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     from .refresh_token import RefreshToken
     from .reporte import Reporte
     from .departamento import Departamento
+    from .empleado import Empleado
 
 
 class Usuario(Base):
@@ -40,6 +41,8 @@ class Usuario(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nombre_usuario: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     departamento_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("departamentos.id", ondelete="SET NULL"), nullable=True, index=True)
+    empleado_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("empleados.id", ondelete="SET NULL"), nullable=True, unique=True, index=True)
+    empleado_rel: Mapped[Optional["Empleado"]] = relationship("Empleado", back_populates="usuario_rel", lazy="selectin")
     departamento_rel: Mapped[Optional["Departamento"]] = relationship("Departamento", back_populates="usuarios", lazy="selectin")
     hashed_password: Mapped[str] = mapped_column("contrasena", String)
     rol_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("roles.id"), index=True)

@@ -38,8 +38,7 @@ services:
     env_file: .env
     environment:
       - APP_COMPONENT=backend
-    # user: root solo para desarrollo local con volúmenes montados.
-    # En producción quita esta línea y dejar el usuario "app" del Dockerfile.
+      - UV_CACHE_DIR=/tmp/.uv-cache
     user: root
     volumes:
       - ./app:/home/app/app
@@ -65,6 +64,7 @@ services:
     env_file: .env
     environment:
       - APP_COMPONENT=worker
+      - UV_CACHE_DIR=/tmp/.uv-cache
     user: root
     volumes:
       - ./app:/home/app/app
@@ -88,6 +88,7 @@ services:
     env_file: .env
     environment:
       - APP_COMPONENT=beat
+      - UV_CACHE_DIR=/tmp/.uv-cache
     user: root
     volumes:
       - ./app:/home/app/app

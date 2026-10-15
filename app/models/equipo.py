@@ -7,7 +7,7 @@ from sqlalchemy import (
     Column, String, Text, DateTime, func, ForeignKey, Date, Numeric, Index
 )
 
-from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
+from sqlalchemy.dialects.postgresql import UUID, TSVECTOR, JSONB
 from sqlalchemy.orm import relationship, Mapped, mapped_column, column_property
 
 from app.db.base import Base
@@ -31,6 +31,8 @@ class Equipo(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     nombre: Mapped[str] = mapped_column(String(255), index=True)
+    tipo_activo: Mapped[str] = mapped_column(String(30), default="Equipo", server_default="Equipo")
+    especificaciones_tecnicas: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}")
     numero_serie: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     codigo_interno: Mapped[Optional[str]] = mapped_column(String(100), unique=True, nullable=True, index=True)
     estado_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("estados_equipo.id"), index=True)
@@ -59,14 +61,14 @@ class Equipo(Base):
     
     ubicacion: Mapped[Optional["Ubicacion"]] = relationship("Ubicacion", lazy="selectin")
 
-    movimientos: Mapped[List["Movimiento"]] = relationship("Movimiento", back_populates="equipo", lazy="selectin", cascade="all, delete-orphan")
-    documentos: Mapped[List["Documentacion"]] = relationship("Documentacion", foreign_keys="Documentacion.equipo_id", back_populates="equipo", lazy="selectin", cascade="all, delete-orphan")
-    mantenimientos: Mapped[List["Mantenimiento"]] = relationship("Mantenimiento", back_populates="equipo", lazy="selectin", cascade="all, delete-orphan")
-    componentes: Mapped[List["EquipoComponente"]] = relationship("EquipoComponente", foreign_keys="EquipoComponente.equipo_padre_id", back_populates="equipo_padre", lazy="selectin", cascade="all, delete-orphan")
-    parte_de: Mapped[List["EquipoComponente"]] = relationship("EquipoComponente", foreign_keys="EquipoComponente.equipo_componente_id", back_populates="equipo_componente", lazy="selectin", cascade="all, delete-orphan")
-    licencias_asignadas_a_equipo: Mapped[List["AsignacionLicencia"]] = relationship("AsignacionLicencia", foreign_keys="AsignacionLicencia.equipo_id", back_populates="equipo", lazy="selectin", cascade="all, delete-orphan")
-    reservas: Mapped[List["ReservaEquipo"]] = relationship("ReservaEquipo", back_populates="equipo", lazy="selectin", cascade="all, delete-orphan")
-    movimientos_inventario_asociados: Mapped[List["InventarioMovimiento"]] = relationship("InventarioMovimiento", back_populates="equipo_asociado", lazy="selectin")
+    movimientos: Mapped[List["Movimiento"]] = relationship("Movimiento", back_populates="equipo", lazy="select", cascade="all, delete-orphan")
+    documentos: Mapped[List["Documentacion"]] = relationship("Documentacion", foreign_keys="Documentacion.equipo_id", back_populates="equipo", lazy="select", cascade="all, delete-orphan")
+    mantenimientos: Mapped[List["Mantenimiento"]] = relationship("Mantenimiento", back_populates="equipo", lazy="select", cascade="all, delete-orphan")
+    componentes: Mapped[List["EquipoComponente"]] = relationship("EquipoComponente", foreign_keys="EquipoComponente.equipo_padre_id", back_populates="equipo_padre", lazy="select", cascade="all, delete-orphan")
+    parte_de: Mapped[List["EquipoComponente"]] = relationship("EquipoComponente", foreign_keys="EquipoComponente.equipo_componente_id", back_populates="equipo_componente", lazy="select", cascade="all, delete-orphan")
+    licencias_asignadas_a_equipo: Mapped[List["AsignacionLicencia"]] = relationship("AsignacionLicencia", foreign_keys="AsignacionLicencia.equipo_id", back_populates="equipo", lazy="select", cascade="all, delete-orphan")
+    reservas: Mapped[List["ReservaEquipo"]] = relationship("ReservaEquipo", back_populates="equipo", lazy="select", cascade="all, delete-orphan")
+    movimientos_inventario_asociados: Mapped[List["InventarioMovimiento"]] = relationship("InventarioMovimiento", back_populates="equipo_asociado", lazy="select")
 
     def __repr__(self) -> str:
         return f"<Equipo(id={self.id}, nombre='{self.nombre}', serie='{self.numero_serie}')>"

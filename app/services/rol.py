@@ -32,7 +32,7 @@ class RolService(BaseService[Rol, RolCreate, RolUpdate]):
         """
         logger.debug(f"Intentando crear rol con nombre: {obj_in.nombre}")
         existing_rol = self.get_by_name(db, name=obj_in.nombre)
-        if existing_rol:
+        if existing_rol or obj_in.nombre.strip().lower() == "admin":
             logger.warning(f"Intento de crear rol con nombre duplicado: {obj_in.nombre}")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -73,6 +73,11 @@ class RolService(BaseService[Rol, RolCreate, RolUpdate]):
         """
         update_data_dict = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
         rol_id = db_obj.id
+        if db_obj.nombre.lower() != "admin" and update_data_dict.get("nombre", "").strip().lower() == "admin":
+            raise HTTPException(status_code=403, detail="El nombre admin está reservado para el rol administrador.")
+        if db_obj.nombre.lower() == "admin":
+            if ("nombre" in update_data_dict and update_data_dict["nombre"] != db_obj.nombre) or (update_data_dict.get("permiso_ids") is not None and set(update_data_dict["permiso_ids"]) != {p.id for p in db_obj.permisos}):
+                raise HTTPException(status_code=403, detail="El nombre y los permisos del rol administrador están protegidos.")
 
         logger.debug(f"Intentando actualizar rol ID {rol_id} con datos: {update_data_dict}")
 

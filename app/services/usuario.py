@@ -4,7 +4,8 @@ from uuid import UUID, uuid4
 from datetime import datetime, timezone, timedelta
 
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, update, text
+from app.models.refresh_token import RefreshToken
 from fastapi import HTTPException, status
 
 from app.models.usuario import Usuario
@@ -15,6 +16,7 @@ from .base_service import BaseService
 from .rol import rol_service
 
 from app.core.password import verify_password, get_password_hash
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,16 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
     """
     Servicio para gestionar Usuarios. Incluye lógica para contraseñas y roles.
     """
+
+    def _lock(self, db: Session, user: Usuario) -> Usuario:
+        return db.scalar(select(Usuario).where(Usuario.id == user.id).with_for_update(of=Usuario).execution_options(populate_existing=True))
+
+    def revoke_sessions(self, db: Session, user: Usuario) -> None:
+        user.session_version = (user.session_version or 0) + 1
+        user.token_temporal = None
+        user.token_expiracion = None
+        db.execute(update(RefreshToken).where(RefreshToken.usuario_id == user.id, RefreshToken.revoked_at.is_(None)).values(revoked_at=datetime.now(timezone.utc)))
+        db.add(user)
 
     def get_by_username(self, db: Session, *, username: str) -> Optional[Usuario]:
         """Obtiene un usuario por su nombre de usuario."""
@@ -59,7 +71,7 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"El Rol con ID {obj_in.rol_id} no fue encontrado.")
         else:
             logger.error("Intento de crear usuario sin rol_id.")
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="El campo rol_id es obligatorio.")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="El campo rol_id es obligatorio.")
 
         create_data = obj_in.model_dump()
         plain_password = create_data.pop("password")
@@ -85,11 +97,14 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         update_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
         user_id = db_obj.id
 
-        logger.debug(f"Intentando actualizar usuario ID {user_id} con datos: {update_data}")
+        db_obj = self._lock(db, db_obj)
+        logger.debug("Actualizando usuario %s; campos: %s", user_id, sorted(update_data))
 
         if "password" in update_data and update_data["password"]:
             plain_password = update_data.pop("password")
             update_data["hashed_password"] = get_password_hash(plain_password)
+            self.revoke_sessions(db, db_obj)
+            update_data["requiere_cambio_contrasena"] = True
             logger.info(f"Contraseña actualizada para usuario ID {user_id}.")
         elif "password" in update_data:
             update_data.pop("password")
@@ -103,7 +118,7 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
                 logger.info(f"Rol actualizado para usuario ID {user_id} a rol ID {update_data['rol_id']}.")
         elif "rol_id" in update_data and update_data["rol_id"] is None:
             logger.warning(f"Intento de asignar rol_id nulo a usuario ID {user_id}, lo cual no está permitido.")
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No se puede asignar un rol nulo al usuario.")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="No se puede asignar un rol nulo al usuario.")
 
         if "nombre_usuario" in update_data and update_data["nombre_usuario"] != db_obj.nombre_usuario:
             logger.debug(f"Validando nuevo nombre de usuario '{update_data['nombre_usuario']}' para usuario ID {user_id}.")
@@ -143,6 +158,7 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
             logger.warning(f"Intento de login fallido: Usuario '{username_or_email}' no encontrado.")
             return None
         
+        user = self._lock(db, user)
         if user.bloqueado:
             logger.warning(f"Intento de login para usuario '{user.nombre_usuario}' que ya está bloqueado.")
             return user
@@ -151,7 +167,7 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
             logger.warning(f"Intento de login fallido: Contraseña incorrecta para usuario '{user.nombre_usuario}'.")
             # --- Lógica para intento fallido ---
             user.intentos_fallidos = (user.intentos_fallidos or 0) + 1
-            if user.intentos_fallidos >= 5: # Límite de intentos
+            if user.intentos_fallidos >= settings.MAX_FAILED_ATTEMPTS_BEFORE_LOCK: # Límite de intentos
                 user.bloqueado = True
                 logger.warning(f"Usuario '{user.nombre_usuario}' bloqueado por exceder 5 intentos fallidos.")
             
@@ -201,6 +217,12 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
             raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
         
         nombre_usuario_eliminado = db_obj.nombre_usuario
+        if db.scalar(text("""SELECT EXISTS (
+            SELECT 1 FROM control_equipos.movimientos WHERE usuario_id=:uid OR autorizado_por=:uid
+            UNION ALL SELECT 1 FROM control_equipos.inventario_movimientos WHERE usuario_id=:uid
+            UNION ALL SELECT 1 FROM control_equipos.audit_log WHERE app_user_id=:uid
+        )"""), {"uid": db_obj.id}):
+            raise HTTPException(409, "Este usuario tiene historial registrado. Bloquea su acceso para conservar la trazabilidad.")
         
         db.delete(db_obj)
         logger.warning(f"Usuario '{nombre_usuario_eliminado}' (ID: {id}) preparado para ser eliminado.")
@@ -216,6 +238,7 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         """
         logger.info(f"Iniciando cambio de contraseña para el usuario: {user.nombre_usuario}")
 
+        user = self._lock(db, user)
         if not verify_password(password_data.current_password, user.hashed_password):
             logger.warning(f"Intento de cambio de contraseña fallido para '{user.nombre_usuario}': contraseña actual incorrecta.")
             raise HTTPException(
@@ -223,6 +246,7 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
                 detail="La contraseña actual es incorrecta.",
             )
 
+        self.revoke_sessions(db, user)
         user.hashed_password = get_password_hash(password_data.new_password)
         
         user.requiere_cambio_contrasena = False
@@ -231,7 +255,7 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         logger.info(f"Contraseña actualizada exitosamente para el usuario '{user.nombre_usuario}'.")
         return user
 
-    def initiate_password_reset(self, db: Session, *, username_or_email: str) -> Usuario:
+    def initiate_password_reset(self, db: Session, *, username_or_email: str, initiated_by: Optional[Usuario] = None) -> Usuario:
         """
         Genera y guarda un token de reseteo temporal para un usuario.
         Acepta nombre de usuario o correo electrónico.
@@ -247,6 +271,9 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
             logger.error(f"Intento de reseteo de contraseña para usuario no existente: {username_or_email}")
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
         
+        user = self._lock(db, user)
+        if initiated_by and user.id == initiated_by.id:
+            raise HTTPException(403, "Para cambiar tu propia contraseña utiliza tu perfil y confirma la contraseña actual.")
         user.token_temporal = uuid4()
         user.token_expiracion = datetime.now(timezone.utc) + timedelta(minutes=15) # Token válido por 15 minutos
         
@@ -271,12 +298,14 @@ class UsuarioService(BaseService[Usuario, UsuarioCreate, UsuarioUpdate]):
         if not user:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
         
+        user = self._lock(db, user)
         if not user.token_temporal or user.token_temporal != token:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token de reseteo inválido.")
             
         if not user.token_expiracion or user.token_expiracion < datetime.now(timezone.utc):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El token de reseteo ha expirado.")
 
+        self.revoke_sessions(db, user)
         user.hashed_password = get_password_hash(new_password)
         user.token_temporal = None
         user.token_expiracion = None

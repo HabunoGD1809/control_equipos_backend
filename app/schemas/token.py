@@ -12,6 +12,7 @@ class Token(BaseModel):
 # Schema para los datos contenidos dentro del JWT (payload)
 class TokenPayload(BaseModel):
     sub: uuid.UUID | str
+    ver: int = 0
 
 # Schema para el cuerpo de la petición /refresh-token
 class RefreshToken(BaseModel):

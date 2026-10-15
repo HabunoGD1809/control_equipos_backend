@@ -40,7 +40,7 @@ class Empleado(Base):
     equipos_asignados: Mapped[List["Equipo"]] = relationship("Equipo", back_populates="empleado_asignado", lazy="selectin")
     
     # Historial de recepciones
-    movimientos_recibidos: Mapped[List["Movimiento"]] = relationship("Movimiento", back_populates="empleado_destino", lazy="selectin")
+    movimientos_recibidos: Mapped[List["Movimiento"]] = relationship("Movimiento", foreign_keys="Movimiento.empleado_destino_id", back_populates="empleado_destino", lazy="selectin")
 
     def __repr__(self) -> str:
         return f"<Empleado(id={self.id}, nombre='{self.nombre_completo}')>"

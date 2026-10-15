@@ -66,7 +66,7 @@ async def validation_exception_handler(request: Request, exc: Exception):
     log_message = f"Error de Validación en Request: {request.method} {request.url} - Errores: {error_details}"
     logger.warning(log_message)
     return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
         content={"detail": "Error de validación en los datos de entrada.", "errors": error_details},
     )
 
@@ -98,7 +98,7 @@ async def database_exception_handler(request: Request, exc: Exception):
         return await generic_exception_handler(request, exc)
 
     original_exc = getattr(exc, 'orig', None)
-    pgcode = getattr(original_exc, 'pgcode', None)
+    pgcode = getattr(original_exc, 'sqlstate', None) or getattr(original_exc, 'pgcode', None)
     diag_message = None
     constraint_name = None
     error_message_for_matching = str(original_exc if original_exc else exc)
@@ -111,12 +111,7 @@ async def database_exception_handler(request: Request, exc: Exception):
         if diag_message:
             error_message_for_matching = diag_message
 
-    logger.error(
-        f"Database Error Handler - Type: {type(original_exc).__name__ if original_exc else type(exc).__name__}, "
-        f"PGCode: {pgcode}, Constraint: '{constraint_name}', DiagMsg: '{diag_message}', MatchMsg: '{error_message_for_matching}', "
-        f"Request: {request.method} {request.url}",
-        exc_info=True
-    )
+    logger.error("Error de base de datos: tipo=%s sqlstate=%s restricción=%s ruta=%s", type(original_exc or exc).__name__, pgcode, constraint_name, request.url.path)
 
     user_message = "Ocurrió un error interno del servidor al procesar la solicitud."
     status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -130,9 +125,9 @@ async def database_exception_handler(request: Request, exc: Exception):
              status_code = status.HTTP_400_BAD_REQUEST
         elif constraint_name == "reservas_equipo_fechas_check" or "violates check constraint \"reservas_equipo_fechas_check\"" in error_message_for_matching.lower():
             user_message = "La fecha de fin de la reserva no puede ser anterior o igual a la fecha de inicio."
-            status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+            status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
         else:
-            user_message = f"Los datos proporcionados violan una regla de negocio (restricción: {constraint_name or 'desconocida'})."
+            user_message = "Los datos proporcionados no cumplen las reglas de validación."
             status_code = status.HTTP_400_BAD_REQUEST
         return_response_directly = True
 
@@ -149,8 +144,7 @@ async def database_exception_handler(request: Request, exc: Exception):
          elif constraint_name == "uq_roles_nombre" or "roles_nombre_key" in error_message_for_matching.lower(): user_message = "Ya existe un rol con ese nombre."
          elif constraint_name == "uq_permisos_nombre" or "permisos_nombre_key" in error_message_for_matching.lower(): user_message = "Ya existe un permiso con ese nombre."
          elif constraint_name and "uq_estados_equipo_nombre" in constraint_name : user_message = "Ya existe un estado de equipo con ese nombre."
-         elif detail_msg and ("is already present" in detail_msg or "ya existe" in detail_msg.lower()): user_message = f"Conflicto: {detail_msg}"
-         else: user_message = f"Conflicto: Ya existe un registro con datos que deben ser únicos (restricción: {constraint_name or 'desconocida'})."
+         else: user_message = "Ya existe un registro con los mismos datos únicos."
          status_code = status.HTTP_409_CONFLICT
          return_response_directly = True
 
@@ -160,8 +154,7 @@ async def database_exception_handler(request: Request, exc: Exception):
          detail_msg = getattr(getattr(original_exc, 'diag', {}), 'detail', None) if original_exc else error_message_for_matching
          if constraint_name == "fk_usuarios_rol": user_message = "El Rol especificado no fue encontrado."
          elif constraint_name == "fk_equipos_estado": user_message = "El Estado de Equipo especificado no fue encontrado."
-         elif detail_msg and ("not present in table" in detail_msg or "no está presente en la tabla" in detail_msg.lower()): user_message = f"Error de referencia: {detail_msg}"
-         else: user_message = f"Error de referencia: El registro vinculado no existe (restricción: {constraint_name or 'desconocida'})."
+         else: user_message = "El registro vinculado no existe o está en uso."
          status_code = status.HTTP_404_NOT_FOUND # O 422
          return_response_directly = True
 
@@ -172,7 +165,7 @@ async def database_exception_handler(request: Request, exc: Exception):
          if constraint_name == "reservas_equipo_equipo_id_tstzrange_excl":
              user_message = "La reserva se solapa con otra reserva existente para el mismo equipo en el rango de fechas especificado."
          elif constraint_name:
-             user_message = f"Conflicto por restricción de exclusión '{constraint_name}': Existe un solapamiento con un registro existente."
+             user_message = "Existe un solapamiento con un registro existente."
          status_code = status.HTTP_409_CONFLICT
          return_response_directly = True
 
@@ -180,21 +173,21 @@ async def database_exception_handler(request: Request, exc: Exception):
          (isinstance(exc, IntegrityError) and "violates not-null constraint" in error_message_for_matching.lower()):
          logger.debug(f"DB Handler: Captured NotNullViolation (PGCode:{pgcode}). MatchMsg: '{error_message_for_matching}'")
          column_name = getattr(getattr(original_exc, 'diag', {}), 'column_name', 'desconocido') if original_exc else 'desconocido'
-         user_message = f"Error de datos: El campo '{column_name}' no puede ser nulo."
-         status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+         user_message = "Falta un campo obligatorio."
+         status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
          return_response_directly = True
 
     elif pgcode == PGCODE_RAISE_EXCEPTION or (psycopg_errors and isinstance(original_exc, PG_RaiseException)):
         logger.warning(f"DB Handler: Captured PG_RaiseException (PGCode:{pgcode}). Mensaje: '{error_message_for_matching}'")
         # Mapeos específicos para excepciones RAISE EXCEPTION de funciones PL/pgSQL
         if "stock insuficiente" in error_message_for_matching.lower():
-            user_message = error_message_for_matching
+            user_message = "Stock insuficiente para completar la operación."
             status_code = status.HTTP_409_CONFLICT
         elif "no se puede cancelar un movimiento en estado" in error_message_for_matching.lower():
-            user_message = error_message_for_matching
+            user_message = "No se puede cancelar el movimiento en su estado actual."
             status_code = status.HTTP_409_CONFLICT
         else:
-            user_message = f"Error en lógica de base de datos: {error_message_for_matching}"
+            user_message = "La operación no cumple las reglas de negocio del registro."
             status_code = status.HTTP_400_BAD_REQUEST
         return_response_directly = True
 

@@ -21,46 +21,44 @@ router = APIRouter()
 async def stream_notificaciones(
     request: Request,
     current_user: UsuarioModel = Depends(deps.get_current_user_sse),
-    db: Session = Depends(deps.get_db)
 ):
-    """
-    Streaming SSE (Pub/Sub).
-    La conexión se mantiene dormida y solo consume recursos cuando
-    el broker empuja un nuevo evento.
-    """
-    user_id_str = str(current_user.id)
-    queue = broker.subscribe(user_id_str)
+    user_id = current_user.id
+    queue = broker.subscribe(str(user_id))
+
+    def read_snapshot():
+        from app.db.session import SessionLocal
+        from app.models.notificacion import Notificacion as NotificationModel
+        from sqlalchemy import select, func
+        with SessionLocal() as session:
+            user = session.get(UsuarioModel, user_id)
+            if not user or user.bloqueado or user.session_version != current_user.session_version or user.requiere_cambio_contrasena:
+                return None
+            count = notificacion_service.get_unread_count_by_user(session, usuario_id=user_id)
+            latest = session.execute(select(func.max(NotificationModel.created_at)).where(NotificationModel.usuario_id == user_id)).scalar()
+            return (count, str(latest))
 
     async def event_generator():
+        previous = None
         try:
-            initial_count = notificacion_service.get_unread_count_by_user(db, usuario_id=current_user.id)
-            yield f"event: update\ndata: {initial_count}\n\n"
-
-            while True:
-                if await request.is_disconnected():
-                    logger.debug(f"Cliente SSE desconectado: {user_id_str}")
-                    break
-                
+            yield "retry: 3000\n\n"
+            while not await request.is_disconnected():
+                snapshot = await asyncio.to_thread(read_snapshot)
+                if snapshot is None:
+                    yield "event: session-expired\ndata: logout\n\n"
+                    return
+                if snapshot != previous:
+                    yield f"event: update\ndata: {snapshot[0]}\n\n"
+                    previous = snapshot
                 try:
-                    new_count = await asyncio.wait_for(queue.get(), timeout=5.0)
-                    yield f"event: update\ndata: {new_count}\n\n"
+                    await asyncio.wait_for(queue.get(), timeout=15)
+                    previous = None
                 except asyncio.TimeoutError:
-                    continue
-                
-        except asyncio.CancelledError:
-            logger.debug(f"Conexión SSE cancelada (CancelledError) para {user_id_str}")
+                    yield ": heartbeat\n\n"
         finally:
-            broker.unsubscribe(user_id_str, queue)
+            broker.unsubscribe(str(user_id), queue)
 
-    return StreamingResponse(
-        event_generator(), 
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
-        }
-    )
+    return StreamingResponse(event_generator(), media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"})
 
 @router.get("/", response_model=List[Notificacion], summary="Listar Notificaciones del Usuario Actual")
 def read_notificaciones_usuario_actual(

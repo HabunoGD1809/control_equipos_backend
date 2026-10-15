@@ -19,13 +19,8 @@ class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, 
 
     def _notify_broker(self, db: Session, usuario_id: UUID):
         """Función auxiliar para avisar al SSE de forma asíncrona sin bloquear SQLAlchemy."""
-        unread_count = self.get_unread_count_by_user(db, usuario_id=usuario_id)
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(broker.publish(str(usuario_id), unread_count))
-        except RuntimeError:
-            # Ignorar si se ejecuta fuera de un event loop (ej. scripts síncronos de consola)
-            pass
+        # Notify only after commit: rollback must never produce a visible event.
+        db.info.setdefault("notification_users", set()).add(str(usuario_id))
 
     def create_internal(self, db: Session, *, obj_in: NotificacionCreateInternal) -> Notificacion:
         logger.debug(f"Creando notificación interna para Usuario ID: {obj_in.usuario_id}, Mensaje: '{obj_in.mensaje[:30]}...'")
@@ -86,7 +81,7 @@ class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, 
 
     def remove(self, db: Session, *, id: Union[UUID, int]) -> Notificacion:
         """Sobrescribimos remove para avisar al frontend al borrar."""
-        obj = db.query(self.model).get(id)
+        obj = db.get(self.model, id)
         if obj:
             usuario_id = obj.usuario_id # type: ignore
             obj = super().remove(db, id=id)
@@ -101,7 +96,7 @@ class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, 
         statement = select(self.model).where(self.model.usuario_id == usuario_id) # type: ignore
         if solo_no_leidas:
             statement = statement.where(self.model.leido == False) # type: ignore
-        statement = statement.order_by(self.model.created_at.desc()).offset(skip).limit(limit) # type: ignore
+        statement = statement.order_by(self.model.created_at.desc(), self.model.id.desc()).offset(skip).limit(limit) # type: ignore
         result = db.execute(statement)
         return list(result.scalars().all())
 
@@ -116,3 +111,14 @@ class NotificacionService(BaseService[Notificacion, NotificacionCreateInternal, 
         return count or 0
 
 notificacion_service = NotificacionService(Notificacion)
+
+from sqlalchemy import event
+
+@event.listens_for(Session, "after_commit")
+def publish_committed_notifications(session):
+    for user_id in session.info.pop("notification_users", set()):
+        broker.notify(user_id)
+
+@event.listens_for(Session, "after_rollback")
+def discard_notification_events(session):
+    session.info.pop("notification_users", None)

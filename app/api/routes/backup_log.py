@@ -1,12 +1,14 @@
 import logging
-import subprocess
-import os
 from typing import Any, List, Optional
 from uuid import UUID as PyUUID
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy.orm import Session
+from sqlalchemy import text
+from pathlib import Path
+from fastapi.responses import FileResponse
+from app.core.backup import create_system_backup, BACKUP_DIR, ROOT
 
 from app.api import deps
 from app.schemas.backup_log import BackupLog as BackupLogSchema
@@ -15,90 +17,46 @@ from app.models.usuario import Usuario as UsuarioModel
 from app.models.backup_log import BackupLog as BackupLogModel
 
 from app.core import permissions as perms
-from app.core.config import settings
-from app.db.session import SessionLocal # Importante para la tarea en background
+from app.db.session import SessionLocal, engine
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 def run_backup_script(user_name: str):
-    """
-    Ejecuta el backup real utilizando pg_dump mediante subprocess.
-    Utiliza su propia sesión de BD porque se ejecuta en background.
-    """
-    db_bg: Optional[Session] = None
-    try:
-        db_bg = SessionLocal()
-        logger.info(f"Iniciando backup manual solicitado por {user_name}")
-        
-        # 1. Preparar el directorio de backups
-        backup_dir = "backups" 
-        os.makedirs(backup_dir, exist_ok=True)
-        
-        # 2. Generar nombre de archivo único
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_filename = f"db_backup_{timestamp}.backup"
-        backup_file_path = os.path.join(backup_dir, backup_filename)
-        
-        # 3. Construir el comando pg_dump usando las propiedades de config.py
-        command = [
-            "pg_dump", 
-            "-h", settings.POSTGRES_SERVER,
-            "-p", str(settings.POSTGRES_PORT),
-            "-U", settings.POSTGRES_USER,
-            "-F", "c", # Formato custom (comprimido, ideal para restaurar con pg_restore)
-            "-f", backup_file_path,
-            settings.POSTGRES_DB
-        ]
-        
-        # 4. Pasar la contraseña de forma segura mediante variables de entorno
-        env = os.environ.copy()
-        env["PGPASSWORD"] = settings.POSTGRES_PASSWORD
-        
-        # 5. Ejecutar el comando en el sistema operativo
-        result = subprocess.run(command, env=env, capture_output=True, text=True, check=True)
-        
-        # 6. Registrar el éxito en la base de datos
-        nuevo_log = BackupLogModel(
-            backup_status="Completado",
-            backup_type="Manual DB",
-            file_path=backup_file_path,
-            notes=f"Ejecutado por: {user_name}"
-        )
-        db_bg.add(nuevo_log)
-        db_bg.commit()
-        logger.info(f"Backup completado exitosamente y guardado en {backup_file_path}.")
+    started = datetime.now(timezone.utc)
+    with SessionLocal() as db:
+        log = BackupLogModel(backup_status="En Proceso", backup_type="Manual DB + archivos", notes=f"Solicitado por: {user_name}")
+        db.add(log); db.commit(); db.refresh(log)
+        lock_connection = engine.connect()
+        locked = False
+        try:
+            locked = bool(lock_connection.execute(text("SELECT pg_try_advisory_lock(hashtext('control_equipos.manual_backup'))")).scalar())
+            if not locked:
+                log.backup_status = "Fallido"
+                log.error_message = "Ya hay un respaldo en ejecución. Espere a que termine antes de volver a intentarlo."
+                db.commit()
+                return
+            path = create_system_backup()
+            log.backup_status = "Completado"
+            log.file_path = str(path)
+            log.duration = datetime.now(timezone.utc) - started
+            db.commit()
+        except Exception:
+            logger.exception("Falló el respaldo manual")
+            db.rollback()
+            log.backup_status = "Fallido"
+            log.error_message = "No se pudo crear el respaldo. Revise las herramientas de PostgreSQL, el espacio disponible y el registro del servidor."
+            log.duration = datetime.now(timezone.utc) - started
+            db.commit()
 
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Error en pg_dump durante el backup manual: {e.stderr}")
-        if db_bg:
-            db_bg.rollback()
-            log_fallido = BackupLogModel(
-                backup_status="Fallido",
-                backup_type="Manual DB",
-                error_message=e.stderr[:500], 
-                notes=f"Intento fallido de {user_name}"
-            )
-            db_bg.add(log_fallido)
-            db_bg.commit()
-            
-    except Exception as e:
-        logger.error(f"Error inesperado al ejecutar backup manual: {e}", exc_info=True)
-        if db_bg:
-            db_bg.rollback()
-            log_fallido = BackupLogModel(
-                backup_status="Fallido",
-                backup_type="Manual DB",
-                error_message=str(e)[:500],
-                notes=f"Error inesperado. Intento fallido de {user_name}"
-            )
-            db_bg.add(log_fallido)
-            db_bg.commit()
-            
-    finally:
-        if db_bg:
-            db_bg.close()
+        finally:
+            try:
+                if locked:
+                    lock_connection.execute(text("SELECT pg_advisory_unlock(hashtext('control_equipos.manual_backup'))"))
+            finally:
+                lock_connection.close()
+
 
 @router.post("/",
              response_model=dict,
@@ -138,7 +96,7 @@ def read_backup_logs(
     Obtiene una lista de registros del log de backups, permitiendo aplicar filtros.
     """
     if start_time and end_time and end_time <= start_time:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La fecha de fin debe ser posterior a la fecha de inicio para el filtro.")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="La fecha de fin debe ser posterior a la fecha de inicio para el filtro.")
 
     try:
         logs = backup_log_service.get_multi(
@@ -169,3 +127,16 @@ def read_backup_log_by_id(
     if not log:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Log de backup con ID {log_id} no encontrado.")
     return log
+
+
+@router.get("/{backup_id}/download", dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_SISTEMA]))])
+def download_backup(backup_id: PyUUID, db: Session = Depends(deps.get_db), current_user: UsuarioModel = Depends(deps.get_current_active_user)):
+    log = db.get(BackupLogModel, backup_id)
+    if not log or log.backup_status not in {"Completado", "Success"} or not log.file_path:
+        raise HTTPException(404, "El respaldo no está disponible.")
+    path = Path(log.file_path)
+    if not path.is_absolute(): path = ROOT / path
+    path = path.resolve()
+    if path.parent != BACKUP_DIR.resolve() or path.suffix.lower() not in {".zip", ".dump", ".backup"} or not path.is_file():
+        raise HTTPException(404, "El archivo de respaldo no está disponible.")
+    return FileResponse(path, filename=path.name, media_type="application/octet-stream", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})

@@ -96,7 +96,7 @@ async def test_create_reserva_fecha_fin_antes_inicio(
     data = jsonable_encoder(reserva_schema)
     response = await client.post(f"{settings.API_V1_STR}/reservas/", headers=headers, json=data)
 
-    assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
 async def test_read_reservas_success(
     client: AsyncClient, auth_token_supervisor: str,

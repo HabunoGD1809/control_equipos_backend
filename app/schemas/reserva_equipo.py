@@ -48,7 +48,7 @@ class ReservaEquipoUpdateEstado(BaseModel):
     notas_administrador: Optional[str] = Field(None, description="Notas del gestor que aprueba, rechaza o modifica el estado")
 
 class ReservaEquipoCheckInOut(BaseModel):
-    """Schema para registrar la recogida (check-in) o devolución (check-out) del equipo."""
+    """Schema para registrar la entrega (check-out) o devolución (check-in) del equipo."""
     check_in_time: Optional[datetime] = None
     check_out_time: Optional[datetime] = None
     notas_devolucion: Optional[str] = Field(None, description="Notas sobre el estado del equipo al momento de la devolución.")

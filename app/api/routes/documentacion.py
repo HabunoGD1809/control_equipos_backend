@@ -65,7 +65,7 @@ async def create_documentacion_with_upload(
 
     if equipo_id is None and mantenimiento_id is None and licencia_id is None:
         logger.warning("Intento de subir documento sin asociación a Equipo, Mantenimiento o Licencia.")
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="El documento debe estar asociado al menos a un Equipo, Mantenimiento o Licencia.")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="El documento debe estar asociado al menos a un Equipo, Mantenimiento o Licencia.")
 
     saved_file_info: Optional[Dict[str, Any]] = None
     destination_path_for_log = None
@@ -327,14 +327,17 @@ def download_documentacion(
     if not doc.enlace:
         raise HTTPException(status_code=404, detail="El registro no tiene un archivo físico asociado.")
 
-    file_path = UPLOAD_DIR / doc.enlace
+    file_path = (UPLOAD_DIR / doc.enlace).resolve()
+    if file_path.parent != UPLOAD_DIR.resolve():
+        raise HTTPException(403, "Ruta de documento inválida.")
     if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="El archivo físico no se encontró en el disco del servidor.")
 
     return FileResponse(
         path=file_path,
         filename=doc.nombre_archivo,
-        media_type=doc.mime_type or "application/octet-stream"
+        media_type=doc.mime_type or "application/octet-stream",
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
     )
 
 

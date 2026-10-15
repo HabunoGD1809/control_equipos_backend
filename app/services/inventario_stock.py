@@ -48,7 +48,7 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
             statement = statement.where(self.model.lote.ilike(f"%{lote}%"))
 
         statement = (
-            statement.order_by(self.model.ubicacion_id, self.model.tipo_item_id)
+            statement.order_by(self.model.ubicacion_id, self.model.tipo_item_id, self.model.lote, self.model.id)
             .offset(skip)
             .limit(limit)
         )
@@ -125,6 +125,10 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
         Actualiza campos específicos (ej. lote, fecha_caducidad) de un registro de stock.
         """
         update_data = obj_in.model_dump(exclude_unset=True)
+        stock_record = db.scalar(select(self.model).where(self.model.id == stock_record.id)
+            .with_for_update(of=self.model).execution_options(populate_existing=True))
+        if stock_record is None:
+            raise HTTPException(404, "No se encontró el registro de stock.")
         stock_id = stock_record.id
         logger.debug(f"Intentando actualizar detalles de stock ID {stock_id} con datos: {update_data}")
 
@@ -139,17 +143,11 @@ class InventarioStockService(BaseService[InventarioStock, Any, InventarioStockUp
             logger.info(f"No se proporcionaron campos válidos o modificables para actualizar detalles de stock ID {stock_id}.")
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No se proporcionaron campos válidos para actualizar.")
 
-        if "lote" in fields_to_update and fields_to_update["lote"] != stock_record.lote:
-            logger.debug(f"Validando nuevo lote '{fields_to_update['lote']}' para stock ID {stock_id} (Item ID: {stock_record.tipo_item_id}, Ubicación ID: '{stock_record.ubicacion_id}')")
-            existing_with_new_lote = self.get_stock_record(
-                db,
-                tipo_item_id=stock_record.tipo_item_id,
-                ubicacion_id=stock_record.ubicacion_id,
-                lote=fields_to_update["lote"]
-            )
-            if existing_with_new_lote and existing_with_new_lote.id != stock_id:
-                logger.warning(f"Conflicto al actualizar stock ID {stock_id}: Ya existe stock para este item/ubicación con el lote '{fields_to_update['lote']}'.")
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Ya existe stock para este item/ubicación con el lote especificado.")
+        if "lote" in fields_to_update:
+            lote = (fields_to_update["lote"] or "N/A").strip() or "N/A"
+            if lote != stock_record.lote:
+                raise HTTPException(409, "Para corregir un lote, registre una transferencia al lote correcto en la misma ubicación. Así se conserva el kardex.")
+            fields_to_update["lote"] = lote
 
         for field, value in fields_to_update.items():
              setattr(stock_record, field, value)

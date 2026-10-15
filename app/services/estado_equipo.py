@@ -8,6 +8,7 @@ from fastapi import HTTPException, status
 from app.models.estado_equipo import EstadoEquipo
 from app.models.equipo import Equipo
 from app.schemas.estado_equipo import EstadoEquipoCreate, EstadoEquipoUpdate
+from app.core.equipment_states import SYSTEM_STATE_CODES
 
 from .base_service import BaseService
 
@@ -24,6 +25,14 @@ class EstadoEquipoService(BaseService[EstadoEquipo, EstadoEquipoCreate, EstadoEq
         statement = select(self.model).where(self.model.nombre == nombre)
         result = db.execute(statement)
         return result.scalar_one_or_none()
+
+    def update(self, db: Session, *, db_obj: EstadoEquipo, obj_in):
+        values = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
+        if 'codigo' in values:
+            raise HTTPException(409, 'El código operativo del estado no puede modificarse.')
+        if db_obj.codigo in SYSTEM_STATE_CODES and any(key in values and values[key] != getattr(db_obj, key) for key in ('permite_movimientos', 'es_estado_final')):
+            raise HTTPException(409, 'Las reglas de los estados del sistema están protegidas. Puedes modificar su nombre, descripción y color.')
+        return super().update(db, db_obj=db_obj, obj_in=obj_in)
 
     # Ejemplo de cómo se podría sobreescribir create con validación adicional
     # def create(self, db: Session, *, obj_in: EstadoEquipoCreate) -> EstadoEquipo:
@@ -67,8 +76,15 @@ class EstadoEquipoService(BaseService[EstadoEquipo, EstadoEquipoCreate, EstadoEq
             estado_nombre = db_obj.nombre if db_obj else f"ID {estado_id}"
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"No se puede eliminar el estado '{estado_nombre}' porque está asignado a {count_equipos} equipo(s)."
+                detail=f"El estado '{estado_nombre}' está en uso por {count_equipos} equipo(s) y no puede ser eliminado."
             )
+        estado = self.get(db, id=estado_id)
+        if estado and estado.codigo in SYSTEM_STATE_CODES:
+            raise HTTPException(409, 'No se puede eliminar un estado necesario para los flujos del sistema.')
+
+    def remove(self, db: Session, *, id: UUID) -> EstadoEquipo:
+        self.check_if_can_be_deleted(db, estado_id=id)
+        return super().remove(db, id=id)
     
     # El método remove de BaseService ya no hace commit.
     # Si se necesita lógica de pre-eliminación, se puede sobreescribir remove:

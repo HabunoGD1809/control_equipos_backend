@@ -20,6 +20,7 @@ class EstadoEquipo(Base):
     # __table_args__ = {"schema": "control_equipos"}
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    codigo: Mapped[Optional[str]] = mapped_column(String(32), unique=True, nullable=True)
     nombre: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     descripcion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     permite_movimientos: Mapped[bool] = mapped_column(Boolean, default=True)

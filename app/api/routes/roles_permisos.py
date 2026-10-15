@@ -122,6 +122,11 @@ def update_rol(
     """
     logger.info(f"Intento de actualización de rol ID {rol_id} por usuario {current_user.nombre_usuario} con datos: {rol_in.model_dump(exclude_unset=True)}")
     rol_db = rol_service.get_or_404(db, id=rol_id)
+    if rol_id == current_user.rol_id and rol_in.nombre is not None and rol_in.nombre != rol_db.nombre:
+        raise HTTPException(status_code=403, detail="Otro administrador debe cambiar el nombre de tu propio rol.")
+    if rol_id == current_user.rol_id and rol_in.permiso_ids is not None:
+        if set(rol_in.permiso_ids) != {p.id for p in rol_db.permisos}:
+            raise HTTPException(status_code=403, detail="Otro administrador debe modificar los permisos de tu propio rol.")
 
     try:
         updated_rol = rol_service.update(db=db, db_obj=rol_db, obj_in=rol_in)

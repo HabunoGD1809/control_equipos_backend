@@ -179,6 +179,9 @@ def delete_estado_equipo(
         db.commit()
         logger.info(f"Estado de equipo '{estado_nombre_para_log}' (ID: {estado_id}) eliminado por {current_user.nombre_usuario}.")
         return {"msg": f"Estado de equipo '{estado_nombre_para_log}' eliminado correctamente."}
+    except HTTPException:
+        db.rollback()
+        raise
     except IntegrityError:
         db.rollback()
         logger.warning(f"Intento de eliminar estado equipo '{estado_nombre_para_log}' (ID: {estado_id}) que está en uso.")

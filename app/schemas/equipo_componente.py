@@ -2,7 +2,7 @@ import uuid
 from typing import Optional, TYPE_CHECKING
 from datetime import datetime
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, AliasChoices
 
 from .enums import TipoRelacionComponenteEnum
 
@@ -17,7 +17,7 @@ class EquipoComponenteBase(BaseModel):
     equipo_padre_id: uuid.UUID = Field(..., description="ID del equipo principal o ensamblaje")
     equipo_componente_id: uuid.UUID = Field(..., description="ID del equipo que actúa como componente")
     tipo_relacion: TipoRelacionComponenteEnum = Field(default=TipoRelacionComponenteEnum.COMPONENTE, description="Tipo de vínculo entre los equipos")
-    cantidad: int = Field(default=1, gt=0, description="Cantidad de este componente (ej: 2 módulos de RAM)")
+    cantidad: int = Field(default=1, ge=1, le=1, description="Cada equipo con número de serie representa una unidad.")
     notas: Optional[str] = Field(None, description="Observaciones sobre esta relación específica")
 
 # ===============================================================
@@ -37,7 +37,7 @@ class EquipoComponenteBodyCreate(BaseModel):
     """
     equipo_componente_id: uuid.UUID = Field(..., description="ID del equipo componente a añadir")
     tipo_relacion: TipoRelacionComponenteEnum = Field(default=TipoRelacionComponenteEnum.COMPONENTE, description="Tipo de vínculo entre los equipos")
-    cantidad: int = Field(default=1, gt=0, description="Cantidad del componente a añadir")
+    cantidad: int = Field(default=1, ge=1, le=1, description="Cada equipo con número de serie representa una unidad.")
     notas: Optional[str] = Field(None, description="Notas adicionales sobre esta relación")
 
 # ===============================================================
@@ -48,7 +48,7 @@ class EquipoComponenteUpdate(BaseModel):
     Schema para actualizar una relación existente. Todos los campos son opcionales.
     """
     tipo_relacion: Optional[TipoRelacionComponenteEnum] = None
-    cantidad: Optional[int] = Field(None, gt=0, description="La nueva cantidad debe ser un entero positivo")
+    cantidad: Optional[int] = Field(None, ge=1, le=1, description="Cada equipo con número de serie representa una unidad.")
     notas: Optional[str] = None
 
 # ===============================================================
@@ -71,8 +71,8 @@ class EquipoComponente(EquipoComponenteInDBBase):
 # ===============================================================
 class ComponenteInfo(BaseModel):
     """Schema para mostrar la información de un componente asociado a un equipo padre."""
-    id_relacion: uuid.UUID = Field(..., alias="id")
-    componente: "EquipoSimple"
+    id_relacion: uuid.UUID = Field(..., validation_alias=AliasChoices("id_relacion", "id"), serialization_alias="id")
+    componente: "EquipoSimple" = Field(validation_alias=AliasChoices("componente", "equipo_componente"))
     tipo_relacion: TipoRelacionComponenteEnum
     cantidad: int
     notas: Optional[str] = None
@@ -82,10 +82,10 @@ class ComponenteInfo(BaseModel):
 
 class PadreInfo(BaseModel):
     """Schema para mostrar la información de un equipo padre al que este equipo pertenece."""
-    id_relacion: uuid.UUID = Field(..., alias="id")
-    padre: "EquipoSimple"
+    id_relacion: uuid.UUID = Field(..., validation_alias=AliasChoices("id_relacion", "id"), serialization_alias="id")
+    padre: "EquipoSimple" = Field(validation_alias=AliasChoices("padre", "equipo_padre"))
     tipo_relacion: TipoRelacionComponenteEnum
-    cantidad_en_padre: int = Field(..., alias="cantidad")
+    cantidad_en_padre: int = Field(..., validation_alias=AliasChoices("cantidad_en_padre", "cantidad"), serialization_alias="cantidad")
     notas: Optional[str] = None
     created_at: datetime
 

@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy import Column, String, Text, DateTime, func, ForeignKey
 from sqlalchemy.orm import relationship, Mapped, mapped_column
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 
 from app.db.base import Base
 
@@ -18,6 +18,7 @@ class ReservaEquipo(Base):
     """
     __tablename__ = "reservas_equipo"
 
+    componentes_origen: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     equipo_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("equipos.id", ondelete="CASCADE"), index=True)
     usuario_solicitante_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("usuarios.id", ondelete="CASCADE"), index=True)

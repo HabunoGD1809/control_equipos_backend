@@ -22,7 +22,7 @@ class EstadoEquipoBase(BaseModel):
 # ===============================================================
 class EstadoEquipoCreate(EstadoEquipoBase):
     """Schema utilizado para crear un nuevo estado de equipo."""
-    pass
+    model_config = ConfigDict(extra='forbid')
 
 # ===============================================================
 # Schema para Actualización
@@ -39,6 +39,7 @@ class EstadoEquipoUpdate(BaseModel):
     es_estado_final: Optional[bool] = None
     color_hex: Optional[str] = Field(None, pattern=r"^#[0-9a-fA-F]{6}$")
     icono: Optional[str] = Field(None, max_length=50)
+    model_config = ConfigDict(extra='forbid')
 
 # ===============================================================
 # Schema Interno DB
@@ -46,6 +47,7 @@ class EstadoEquipoUpdate(BaseModel):
 class EstadoEquipoInDBBase(EstadoEquipoBase):
     """Schema que refleja el modelo completo de la BD, incluyendo metadatos."""
     id: uuid.UUID
+    codigo: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -64,6 +66,10 @@ class EstadoEquipoSimple(BaseModel):
     """Schema simplificado, útil para mostrar el estado dentro del schema de Equipo."""
     id: uuid.UUID
     nombre: str
+    codigo: Optional[str] = None
+    permite_movimientos: bool = True
+    requiere_autorizacion: bool = False
+    es_estado_final: bool = False
     color_hex: Optional[str] = None
     icono: Optional[str] = None
 

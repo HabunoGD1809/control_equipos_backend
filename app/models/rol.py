@@ -33,7 +33,7 @@ class Rol(Base):
     usuarios: Mapped[List["Usuario"]] = relationship(
         "Usuario",
         back_populates="rol",
-        lazy="selectin"
+        lazy="select"
     )
 
     # Opcional: Relación con la tabla de asociación RolPermiso si necesitas navegar desde Rol

@@ -32,7 +32,7 @@ class LicenciaSoftwareService(BaseService[LicenciaSoftware, LicenciaSoftwareCrea
         return result.scalar_one_or_none()
 
     def create(self, db: Session, *, obj_in: LicenciaSoftwareCreate) -> LicenciaSoftware:
-        logger.debug(f"Intentando crear licencia para SoftwareCatalogo ID: {obj_in.software_catalogo_id}, Clave: {obj_in.clave_producto}")
+        logger.debug("Creando licencia para catálogo %s", obj_in.software_catalogo_id)
 
         software_info_db = software_catalogo_service.get(db, id=obj_in.software_catalogo_id)
         if not software_info_db:
@@ -46,13 +46,13 @@ class LicenciaSoftwareService(BaseService[LicenciaSoftware, LicenciaSoftwareCrea
         create_data = obj_in.model_dump()
         
         if create_data.get("cantidad_total", 0) < 0 :
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cantidad total no puede ser negativa.")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Cantidad total no puede ser negativa.")
 
         create_data["cantidad_disponible"] = create_data.get("cantidad_total", 0)
         
         db_licencia = super().create(db, obj_in=LicenciaSoftwareCreate(**create_data))
         
-        logger.info(f"Licencia para '{software_info_db.nombre}' (Clave: {db_licencia.clave_producto}) preparada para ser creada.")
+        logger.info("Licencia para %s preparada para creación", software_info_db.nombre)
         return db_licencia
 
     def update(
@@ -69,7 +69,7 @@ class LicenciaSoftwareService(BaseService[LicenciaSoftware, LicenciaSoftwareCrea
         """
         update_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
         lic_id = db_obj.id
-        logger.debug(f"Intentando actualizar licencia ID {lic_id} con datos: {update_data}")
+        logger.debug("Actualizando licencia %s; campos: %s", lic_id, sorted(update_data))
 
         if "proveedor_id" in update_data and update_data["proveedor_id"] != db_obj.proveedor_id: # type: ignore
             if update_data["proveedor_id"] is not None:
@@ -84,7 +84,7 @@ class LicenciaSoftwareService(BaseService[LicenciaSoftware, LicenciaSoftwareCrea
         if "cantidad_total" in update_data:
             nueva_cantidad_total = update_data["cantidad_total"]
             if nueva_cantidad_total < 0:
-                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Cantidad total no puede ser negativa.")
+                 raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Cantidad total no puede ser negativa.")
 
             asignadas_stmt = select(sql_func.count(AsignacionLicencia.id)).where(AsignacionLicencia.licencia_id == lic_id) # type: ignore
             cantidad_asignada_actual = db.execute(asignadas_stmt).scalar_one_or_none() or 0

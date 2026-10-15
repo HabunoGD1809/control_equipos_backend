@@ -5,6 +5,7 @@ from typing import Optional
 
 from .departamento import DepartamentoSimple
 from .empleado import EmpleadoSimple
+from .permiso import Permiso
 
 # ===============================================================
 # Schema para Rol - Para respuestas anidadas
@@ -14,6 +15,7 @@ class Rol(BaseModel):
     id: uuid.UUID
     nombre: str
     descripcion: Optional[str] = None
+    permisos: list[Permiso] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -88,10 +90,16 @@ class UsuarioInDB(UsuarioInDBBase):
     """Schema completo para uso interno, representa una fila de la BD."""
     pass
 
-class UsuarioSimple(BaseModel):
-    """Schema simplificado, útil para mostrar información del autor de un movimiento, etc."""
+class UsuarioIdentidad(BaseModel):
+    """Identity for operational selectors, without profile or authentication data."""
     id: uuid.UUID
     nombre_usuario: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class UsuarioSimple(UsuarioIdentidad):
+    """Schema simplificado, útil para mostrar información del autor de un movimiento, etc."""
     email: Optional[EmailStr] = None
     avatar_url: Optional[str] = None
 

@@ -2,7 +2,6 @@ from typing import Generator, Annotated, Union, List, Set, Optional
 from uuid import UUID
 from fastapi import Depends, HTTPException, status, Request, Query, Header
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
 from pydantic import ValidationError
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import text
@@ -65,7 +64,10 @@ def get_current_user(
 
     if not user:
         logger.warning(f"Usuario no encontrado para ID {token_data.sub} en token válido.")
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado.")
+        raise credentials_exception
+
+    if token_data.ver != user.session_version:
+        raise credentials_exception
 
     # Logging de permisos cargados
     if user.rol and hasattr(user.rol, 'permisos'):
@@ -77,29 +79,31 @@ def get_current_user(
     return user
 
 def get_current_active_user(
+    request: Request,
     current_user: Usuario = Depends(get_current_user),
 ) -> Usuario:
     """Obtiene el usuario actual y verifica que esté activo."""
     if not usuario_service.is_active(current_user):
         logger.warning(f"Acceso denegado: Usuario inactivo/bloqueado {current_user.nombre_usuario} (ID: {current_user.id}).")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El usuario está inactivo o bloqueado.")
+    allowed = {f"{settings.API_V1_STR}/usuarios/me", f"{settings.API_V1_STR}/auth/change-password"}
+    if current_user.requiere_cambio_contrasena and request.url.path.rstrip("/") not in allowed:
+        raise HTTPException(403, "Debe cambiar su contraseña temporal antes de utilizar el sistema.")
     return current_user
 
 # Autenticación Híbrida para Server-Sent Events (SSE)
 def get_current_user_sse(
-    db: Session = Depends(get_db),
-    token: Optional[str] = Query(None),
+    request: Request,
+    db: Session = Depends(get_db, scope="function"),
     authorization: Optional[str] = Header(None)
 ) -> Usuario:
     """
     Dependency específica para endpoints SSE (EventSource en JS no envía headers custom).
-    Intenta extraer el token del header primero, y si no, usa el query param.
+    El proxy del frontend proporciona Authorization; no se admiten credenciales en URLs.
     """
     actual_token = None
     if authorization and authorization.startswith("Bearer "):
         actual_token = authorization.split(" ")[1]
-    elif token:
-        actual_token = token
         
     if not actual_token:
         raise HTTPException(
@@ -108,7 +112,7 @@ def get_current_user_sse(
             headers={"WWW-Authenticate": "Bearer"},
         )
         
-    return get_current_active_user(get_current_user(db=db, token=actual_token))
+    return get_current_active_user(request=request, current_user=get_current_user(db=db, token=actual_token))
 
 class PermissionChecker:
     """

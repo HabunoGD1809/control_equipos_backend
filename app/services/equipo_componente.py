@@ -3,7 +3,8 @@ from typing import Optional, List, Union, Dict, Any
 from uuid import UUID
 
 from sqlalchemy.orm import Session
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, text
+from .asset_custody import lock_topology, physical_group, ensure_free, PHYSICAL
 from fastapi import HTTPException, status
 
 from app.models.equipo_componente import EquipoComponente
@@ -46,6 +47,8 @@ class EquipoComponenteService(BaseService[EquipoComponente, EquipoComponenteCrea
         """
         logger.debug(f"Intentando crear relación de componente: Padre ID {obj_in.equipo_padre_id}, Componente ID {obj_in.equipo_componente_id}, Tipo '{obj_in.tipo_relacion}'")
 
+        lock_topology(db)
+        if obj_in.cantidad != 1: raise HTTPException(422, "Cada activo identificado por serie representa una unidad.")
         if obj_in.equipo_padre_id == obj_in.equipo_componente_id:
             logger.warning("Intento de crear relación de componente cíclica (padre == componente).")
             raise HTTPException(
@@ -69,6 +72,17 @@ class EquipoComponenteService(BaseService[EquipoComponente, EquipoComponenteCrea
                 detail=f"Equipo componente con ID {obj_in.equipo_componente_id} no encontrado."
             )
 
+        cycle = db.scalar(text("""WITH RECURSIVE descendants(id) AS (
+            SELECT CAST(:child AS uuid) UNION
+            SELECT ec.equipo_componente_id FROM control_equipos.equipo_componentes ec JOIN descendants d ON ec.equipo_padre_id=d.id
+        ) SELECT EXISTS(SELECT 1 FROM descendants WHERE id=CAST(:parent AS uuid))"""), {"child": str(componente.id), "parent": str(padre.id)})
+        if cycle: raise HTTPException(409, "La relación crearía un ciclo entre equipos.")
+        if obj_in.tipo_relacion in PHYSICAL:
+            members = physical_group(db, componente.id)
+            parent_members = physical_group(db, padre.id, allow_attached=True)
+            ensure_free(db, members + parent_members)
+            if componente.ubicacion_id != padre.ubicacion_id or componente.empleado_asignado_id != padre.empleado_asignado_id or componente.estado_id != padre.estado_id:
+                raise HTTPException(409, "El componente y el equipo principal deben tener la misma ubicación, estado y custodio. Registre su entrega antes de vincularlos.")
         existing_relation = self.get_relation(
             db,
             padre_id=obj_in.equipo_padre_id,
@@ -117,6 +131,14 @@ class EquipoComponenteService(BaseService[EquipoComponente, EquipoComponenteCrea
         result = db.execute(statement)
         return list(result.scalars().all())
 
+    def update(self, db, *, db_obj, obj_in):
+        lock_topology(db)
+        data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
+        if data.get("cantidad", 1) != 1: raise HTTPException(422, "Un activo con serie representa una unidad.")
+        if data.get("tipo_relacion", db_obj.tipo_relacion) != db_obj.tipo_relacion:
+            raise HTTPException(409, "Desvincule y vuelva a vincular el activo para cambiar su relación física.")
+        return super().update(db, db_obj=db_obj, obj_in=data)
+
     def remove_relation(self, db: Session, *, id: UUID) -> EquipoComponente:
          """
          Elimina una relación de componente por su ID.
@@ -124,6 +146,10 @@ class EquipoComponenteService(BaseService[EquipoComponente, EquipoComponenteCrea
          """
          logger.debug(f"Intentando eliminar relación de componente ID: {id}")
          # super().remove() incluye get_or_404 y db.delete()
+         lock_topology(db)
+         relation = self.get_or_404(db, id=id)
+         if relation.tipo_relacion in PHYSICAL:
+             ensure_free(db, physical_group(db, relation.equipo_padre_id, allow_attached=True))
          deleted_obj = super().remove(db=db, id=id)
          logger.warning(f"Relación de componente ID {id} (Padre ID: {deleted_obj.equipo_padre_id}, Componente ID: {deleted_obj.equipo_componente_id}) preparada para ser eliminada.")
          return deleted_obj

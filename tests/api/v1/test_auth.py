@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.usuario import Usuario
+from tests.conftest import TEST_USER_REGULAR_PASSWORD
 
 pytestmark = pytest.mark.asyncio
 
@@ -16,7 +17,7 @@ async def test_login_success(mock_log_attempt, client: AsyncClient, test_usuario
     """
     Verifica la presencia de token y refresh_token.
     """
-    login_data = {"username": test_usuario_regular_fixture.nombre_usuario, "password": "UsuarioPass123!"}
+    login_data = {"username": test_usuario_regular_fixture.nombre_usuario, "password": TEST_USER_REGULAR_PASSWORD}
     response = await client.post(f"{settings.API_V1_STR}/auth/login/access-token", data=login_data)
     
     assert response.status_code == status.HTTP_200_OK
@@ -53,7 +54,7 @@ class TestRefreshTokenFlow:
         Test del flujo completo: login, refresh y uso del nuevo access token.
         """
         # 1. Login para obtener tokens iniciales
-        login_data = {"username": test_usuario_regular_fixture.nombre_usuario, "password": "UsuarioPass123!"}
+        login_data = {"username": test_usuario_regular_fixture.nombre_usuario, "password": TEST_USER_REGULAR_PASSWORD}
         login_response = await client.post(f"{settings.API_V1_STR}/auth/login/access-token", data=login_data)
         assert login_response.status_code == status.HTTP_200_OK
         initial_tokens = login_response.json()
@@ -78,7 +79,7 @@ class TestRefreshTokenFlow:
 
         # 4. Verificar que el nuevo access token funciona
         headers = {"Authorization": f"Bearer {new_access_token}"}
-        test_response = await client.post(f"{settings.API_V1_STR}/auth/login/test-token", headers=headers)
+        test_response = await client.get(f"{settings.API_V1_STR}/usuarios/me", headers=headers)
         assert test_response.status_code == status.HTTP_200_OK
         assert test_response.json()["nombre_usuario"] == test_usuario_regular_fixture.nombre_usuario
 
@@ -86,7 +87,7 @@ class TestRefreshTokenFlow:
         old_refresh_data = {"refresh_token": initial_refresh_token}
         old_refresh_response = await client.post(f"{settings.API_V1_STR}/auth/refresh-token", json=old_refresh_data)
         assert old_refresh_response.status_code == status.HTTP_403_FORBIDDEN
-        assert "no es válido o ha sido revocado" in old_refresh_response.json()["detail"]
+        assert "no es valido o ha sido revocado" in old_refresh_response.json()["detail"]
 
     async def test_refresh_token_failure_invalid_token(self, client: AsyncClient) -> None:
         """

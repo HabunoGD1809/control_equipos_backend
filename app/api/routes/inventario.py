@@ -84,10 +84,11 @@ def read_tipos_item_inventario(
     db: Session = Depends(deps.get_db),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=200),
+    include_inactive: bool = False,
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
     logger.info(f"Usuario '{current_user.nombre_usuario}' listando tipos de item de inventario.")
-    return tipo_item_inventario_service.get_multi(db, skip=skip, limit=limit)
+    return tipo_item_inventario_service.get_multi(db, skip=skip, limit=limit, include_inactive=include_inactive)
 
 @router.get("/tipos/bajo-stock/",
             response_model=List[TipoItemInventarioConStock],
@@ -302,7 +303,7 @@ def create_inventario_movimiento(
             db,
             tipo_item_id=movimiento_in.tipo_item_id,
             ubicacion_id=movimiento_in.ubicacion_origen_id, # FIX: Usamos _id
-            lote=movimiento_in.lote_origen
+            lote=(movimiento_in.lote_origen or "N/A").strip() or "N/A"
         )
         
         stock_disponible = stock_origen.cantidad_actual if stock_origen else 0

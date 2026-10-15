@@ -22,6 +22,11 @@ class TipoItemInventarioService(BaseService[TipoItemInventario, TipoItemInventar
     Servicio para gestionar los Tipos de Item de Inventario (catálogo).
     """
 
+    def get_multi(self, db, *, skip=0, limit=100, include_inactive=False):
+        statement = select(self.model)
+        if not include_inactive: statement = statement.where(self.model.is_active.is_(True))
+        return list(db.scalars(statement.order_by(self.model.nombre, self.model.id).offset(skip).limit(limit)))
+
     def get_by_name(self, db: Session, *, name: str) -> Optional[TipoItemInventario]:
         """Obtiene un tipo de item por su nombre."""
         logger.debug(f"Buscando tipo de item por nombre: '{name}'")
@@ -81,6 +86,10 @@ class TipoItemInventarioService(BaseService[TipoItemInventario, TipoItemInventar
         """
         update_data = obj_in if isinstance(obj_in, dict) else obj_in.model_dump(exclude_unset=True)
         tipo_item_id = db_obj.id
+        if update_data.get("is_active") is False:
+            db.query(self.model).filter(self.model.id == tipo_item_id).with_for_update().one()
+            if db.scalar(select(InventarioStock.id).where(InventarioStock.tipo_item_id == tipo_item_id, InventarioStock.cantidad_actual > 0).limit(1)):
+                raise HTTPException(409, "Registre la salida o devolución de las existencias antes de desactivar el ítem.")
         logger.debug(f"Intentando actualizar tipo de item ID {tipo_item_id} con datos: {update_data}")
 
         if "nombre" in update_data and update_data["nombre"] != db_obj.nombre:
@@ -135,6 +144,7 @@ class TipoItemInventarioService(BaseService[TipoItemInventario, TipoItemInventar
             )
             .where(sql_func.coalesce(subquery_stock_total.c.stock_total_actual, 0) <= self.model.stock_minimo)
             .where(self.model.stock_minimo > 0)
+            .where(self.model.is_active.is_(True))
             .order_by(self.model.nombre)
             .offset(skip)
             .limit(limit)
@@ -152,6 +162,15 @@ class TipoItemInventarioService(BaseService[TipoItemInventario, TipoItemInventar
 
         logger.info(f"Se encontraron {len(items_low_stock)} items con bajo stock.")
         return items_low_stock
+
+    def remove(self, db: Session, *, id):
+        from app.models.inventario_movimiento import InventarioMovimiento
+        item = self.get_or_404(db, id=id)
+        stock = db.execute(select(InventarioStock.id).where(InventarioStock.tipo_item_id == id, InventarioStock.cantidad_actual > 0).limit(1)).first()
+        movement = db.execute(select(InventarioMovimiento.id).where(InventarioMovimiento.tipo_item_id == id).limit(1)).first()
+        if stock or movement:
+            raise HTTPException(409, "No se puede eliminar un ítem con existencias o historial de movimientos.")
+        return super().remove(db, id=id)
 
     # El método remove es heredado de BaseService y ya no hace commit.
     # La FK en inventario_stock (tipo_item_id) y en inventario_movimientos (tipo_item_id)

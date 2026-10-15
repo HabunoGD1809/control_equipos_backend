@@ -2,7 +2,8 @@ import logging
 import csv
 import uuid
 import traceback
-import pandas as pd
+from threading import BoundedSemaphore
+
 from pathlib import Path
 from typing import Dict, Any
 from datetime import datetime, timezone
@@ -10,12 +11,15 @@ from datetime import datetime, timezone
 from app.worker import celery_app
 from app.db.session import SessionLocal
 from app.core.storage import UPLOAD_DIR
+from app.core.config import settings
 from app.models.notificacion import Notificacion
 from app.models.reporte import Reporte
 from app.services.reporte import reporte_service
-from fpdf import FPDF
+from app.services.report_export import generar_csv, generar_pdf, generar_excel, company_identity
+from sqlalchemy import text
 
 logger = logging.getLogger(__name__)
+report_workers = BoundedSemaphore(2)
 
 @celery_app.task(name="tasks.cleanup_report")
 def task_cleanup_report(report_id_str: str, filepath: str):
@@ -25,6 +29,8 @@ def task_cleanup_report(report_id_str: str, filepath: str):
     db = SessionLocal()
     try:
         path = Path(filepath)
+        if path.resolve().parent != (UPLOAD_DIR / "reportes").resolve():
+            raise ValueError("Ruta de reporte inválida")
         if path.exists():
             path.unlink()
             
@@ -42,18 +48,30 @@ def task_cleanup_report(report_id_str: str, filepath: str):
 
 @celery_app.task(name="tasks.generate_report")
 def task_generate_report(report_id_str: str, report_type: str, filters: Dict[str, Any], formato: str, user_id: str) -> str:
+    # Limit memory and DB connections when several native background jobs arrive together.
+    with report_workers:
+        return _generate_report(report_id_str, report_type, filters, formato, user_id)
+
+
+def _generate_report(report_id_str: str, report_type: str, filters: Dict[str, Any], formato: str, user_id: str) -> str:
     """
     Genera el archivo del reporte, actualiza la BD y notifica al usuario.
     """
     logger.info(f"Iniciando tarea de reporte: {report_id_str} ({report_type})")
     db = SessionLocal()
-    
+    lock_connection = db.get_bind().connect()
+    acquired = False
     try:
+        acquired = bool(lock_connection.execute(text("SELECT pg_try_advisory_lock(hashtextextended(:id, 0))"), {"id": report_id_str}).scalar())
+        if not acquired:
+            return "El reporte ya se está procesando."
         # 1. Buscar y marcar como "procesando"
         reporte = db.query(Reporte).filter(Reporte.id == report_id_str).first()
         if not reporte:
             logger.error(f"Reporte {report_id_str} no encontrado en la base de datos.")
             return "Error: Registro no encontrado"
+        if reporte.estado not in {"pendiente", "procesando"}:
+            return "El reporte ya fue atendido."
             
         reporte.estado = "procesando"
         db.commit()
@@ -62,7 +80,8 @@ def task_generate_report(report_id_str: str, report_type: str, filters: Dict[str
         report_dir = UPLOAD_DIR / "reportes"
         report_dir.mkdir(parents=True, exist_ok=True)
         formato = formato.lower()
-        report_path = report_dir / f"{report_id_str}.{formato}"
+        extension = "xlsx" if formato == "excel" else formato
+        report_path = report_dir / f"{report_id_str}.{extension}"
 
         # 3. Parseo de Fechas
         fecha_inicio_str = filters.get("fecha_inicio")
@@ -78,13 +97,18 @@ def task_generate_report(report_id_str: str, report_type: str, filters: Dict[str
             fecha_fin=f_fin
         )
 
+        company = company_identity(db)
+        title = f"Reporte de {report_type.capitalize()}"
+        period = f"Período: {fecha_inicio_str} al {fecha_fin_str}"
+        if report_type == "inventario":
+            period = f"Existencias al cierre del {fecha_fin_str}"
         # 5. Escribir Archivo Físico
         if formato == "csv":
             generar_csv(report_path, datos)
         elif formato == "pdf":
-            generar_pdf(report_path, datos, f"Reporte de {report_type.capitalize()}")
+            generar_pdf(report_path, datos, title, company, period)
         elif formato in ["excel", "xlsx"]:
-            generar_excel(report_path, datos)
+            generar_excel(report_path, datos, title, company, period)
         else:
             raise NotImplementedError(f"El formato {formato} no está soportado.")
 
@@ -108,9 +132,8 @@ def task_generate_report(report_id_str: str, report_type: str, filters: Dict[str
         db.add(nueva_notificacion)
         db.commit()
 
-        # 8. Programar Autodestrucción (Ej: 24 horas = 86400 segundos)
-        celery_app.send_task("tasks.cleanup_report", args=[report_id_str, str(report_path)], countdown=86400)
-
+        # Periodic report recovery also expires files. A 24-hour ETA would retain
+        # cleanup jobs in worker memory and exceed Redis visibility timeout.
         return f"Reporte {report_id_str} completado."
 
     except Exception as e:
@@ -121,7 +144,7 @@ def task_generate_report(report_id_str: str, report_type: str, filters: Dict[str
         reporte = db.query(Reporte).filter(Reporte.id == report_id_str).first()
         if reporte:
             reporte.estado = "error"
-            reporte.error_msg = traceback.format_exc()
+            reporte.error_msg = "No se pudo generar el reporte. Contacte al administrador para revisar el registro del servidor."
             
             notif_error = Notificacion(
                 usuario_id=user_id,
@@ -138,65 +161,6 @@ def task_generate_report(report_id_str: str, report_type: str, filters: Dict[str
         
     finally:
         db.close()
-
-# ==========================================
-# FUNCIONES AUXILIARES DE GENERACIÓN
-# ==========================================
-def generar_csv(ruta_archivo: Path, datos: list):
-    """Genera el archivo CSV con BOM para compatibilidad con Excel en Windows"""
-    if not datos:
-        with open(ruta_archivo, 'w', encoding='utf-8-sig') as f:
-            f.write("No hay datos para este reporte.")
-        return
-    with open(ruta_archivo, 'w', newline='', encoding='utf-8-sig') as f:
-        writer = csv.DictWriter(f, fieldnames=datos[0].keys())
-        writer.writeheader()
-        writer.writerows(datos)
-
-def generar_pdf(ruta_archivo: Path, datos: list, titulo: str):
-    """Genera un archivo PDF. Compatible con fpdf2 donde output() retorna bytes."""
-    pdf = FPDF(orientation="L", unit="mm", format="A4")
-    pdf.add_page()
-    
-    # Título
-    pdf.set_font("helvetica", "B", 16)
-    pdf.cell(0, 10, titulo, align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(5)
-    
-    if not datos:
-        pdf.set_font("helvetica", "", 12)
-        pdf.cell(0, 10, "No hay datos para el rango seleccionado.")
-        with open(ruta_archivo, "wb") as f:
-            f.write(pdf.output())
-        return
-        
-    columnas = list(datos[0].keys())
-    ancho_pagina = 277
-    ancho_columna = ancho_pagina / len(columnas)
-    
-    # Encabezados
-    pdf.set_font("helvetica", "B", 10)
-    for col in columnas:
-        pdf.cell(ancho_columna, 10, str(col), border=1, align="C")
-    pdf.ln()
-    
-    # Filas
-    pdf.set_font("helvetica", "", 9)
-    for fila in datos:
-        for col in columnas:
-            valor = str(fila.get(col, ""))[:30]
-            pdf.cell(ancho_columna, 8, valor, border=1)
-        pdf.ln()
-    
-    with open(ruta_archivo, "wb") as f:
-        f.write(pdf.output())
-
-def generar_excel(ruta_archivo: Path, datos: list):
-    """Genera un archivo Excel (.xlsx) nativo usando pandas."""
-    if not datos:
-        df = pd.DataFrame([{"Aviso": "No hay datos para el rango seleccionado."}])
-    else:
-        df = pd.DataFrame(datos)
-    
-    # Exportamos a Excel usando el motor openpyxl
-    df.to_excel(ruta_archivo, index=False, engine='openpyxl')
+        if acquired:
+            lock_connection.execute(text("SELECT pg_advisory_unlock(hashtextextended(:id, 0))"), {"id": report_id_str})
+        lock_connection.close()

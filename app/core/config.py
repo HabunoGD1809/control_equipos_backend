@@ -1,5 +1,5 @@
 import json
-from typing import List, Union, Any, Optional
+from typing import List, Union, Any, Optional, Literal
 
 from pydantic import field_validator, PostgresDsn, ValidationInfo, EmailStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     # --- Configuración General del Proyecto ---
     PROJECT_NAME: str = "Control de Equipos API"
     API_V1_STR: str = "/api/v1"
-    ALGORITHM: str = "HS256"
+    ALGORITHM: Literal["HS256", "HS384", "HS512"] = "HS256"
 
     # --- Claves y Tiempos de Expiración ---
     SECRET_KEY: str
@@ -55,8 +55,9 @@ class Settings(BaseSettings):
         return v
         
     # --- Configuración de Celery ---
-    CELERY_BROKER_URL: str
-    CELERY_RESULT_BACKEND: str
+    REPORT_EXECUTION_MODE: Literal["background", "celery"] = "background"
+    CELERY_BROKER_URL: str = "redis://127.0.0.1:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://127.0.0.1:6379/0"
 
     # --- Configuración de Almacenamiento Local (Fallback) ---
     UPLOADS_DIRECTORY: str = "./uploads"
@@ -71,14 +72,20 @@ class Settings(BaseSettings):
 
     # --- Otras Configuraciones ---
     MAX_FAILED_ATTEMPTS_BEFORE_LOCK: int = 5
+    SMTP_HOST: Optional[str] = None
+    SMTP_PORT: int = 587
+    SMTP_STARTTLS: bool = True
+    SMTP_USERNAME: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_FROM: Optional[EmailStr] = None
 
     # --- Credenciales para pruebas ---
-    TEST_USER_REGULAR_PASSWORD: str
-    TEST_ADMIN_PASSWORD: str
-    TEST_SUPERVISOR_PASSWORD: str
-    TEST_TECNICO_PASSWORD: str
-    TEST_AUDITOR_PASSWORD: str
-    TEST_TESTER_PASSWORD: str
+    TEST_USER_REGULAR_PASSWORD: Optional[str] = None
+    TEST_ADMIN_PASSWORD: Optional[str] = None
+    TEST_SUPERVISOR_PASSWORD: Optional[str] = None
+    TEST_TECNICO_PASSWORD: Optional[str] = None
+    TEST_AUDITOR_PASSWORD: Optional[str] = None
+    TEST_TESTER_PASSWORD: Optional[str] = None
 
     # --- Credenciales para el Superusuario Inicial ---
     SUPERUSER_EMAIL: EmailStr
@@ -89,7 +96,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         case_sensitive=True,
         env_file=".env",
-        env_file_encoding="utf-8"
+        env_file_encoding="utf-8",
+        extra="ignore",
+        hide_input_in_errors=True,
     )
 
 settings = Settings() # type: ignore

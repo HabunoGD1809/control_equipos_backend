@@ -3,10 +3,11 @@ from fastapi import APIRouter
 from . import auth, usuarios, empleados, roles_permisos, proveedores, catalogos, equipos
 from . import movimientos, mantenimiento, documentacion, inventario, licencias
 from . import reservas, notificaciones, dashboard, auditoria, backup_log, reportes
-from . import ubicaciones, tecnicos
+from . import ubicaciones, tecnicos, empresa
 
 # Router principal de la API
 api_router = APIRouter()
+api_router.include_router(empresa.router, prefix="/empresa", tags=["Empresa"])
 
 api_router.include_router(auth.router, prefix="/auth", tags=["Auth"])
 api_router.include_router(usuarios.router, prefix="/usuarios", tags=["Usuarios"])

@@ -47,7 +47,7 @@ class AsignacionLicenciaService(BaseService[AsignacionLicencia, AsignacionLicenc
 
         if not (obj_in.equipo_id or obj_in.usuario_id) or (obj_in.equipo_id and obj_in.usuario_id):
              logger.warning("Intento de crear asignación sin un único target (equipo o usuario).")
-             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La asignación debe ser a un equipo O a un usuario, no ambos o ninguno.")
+             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="La asignación debe ser a un equipo O a un usuario, no ambos o ninguno.")
 
         licencia = licencia_software_service.get(db, id=obj_in.licencia_id)
         if not licencia:

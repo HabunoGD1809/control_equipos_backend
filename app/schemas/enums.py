@@ -22,6 +22,7 @@ class UnidadMedidaEnum(str, Enum):
 class TipoMovimientoInvEnum(str, Enum):
     """Valores que coinciden con el CHECK constraint de la tabla `inventario_movimientos`."""
     ENTRADA_COMPRA = 'Entrada Compra'
+    ENTRADA_ABASTECIMIENTO = 'Entrada Abastecimiento'
     SALIDA_USO = 'Salida Uso'
     SALIDA_DESCARTE = 'Salida Descarte'
     AJUSTE_POSITIVO = 'Ajuste Positivo'

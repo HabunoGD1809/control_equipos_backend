@@ -105,3 +105,8 @@ def delete_ubicacion(
         db.rollback()
         logger.error(f"Error inesperado eliminando ubicación ID {id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Error al eliminar ubicación.")
+
+
+@router.get("/{ubicacion_id}", response_model=UbicacionRead)
+def read_detail(ubicacion_id: PyUUID, db: Session = Depends(deps.get_db), current_user=Depends(deps.get_current_active_user)):
+    return ubicacion_service.get_or_404(db, id=ubicacion_id)

@@ -45,7 +45,7 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     ) -> List[ModelType]:
         """Obtiene múltiples registros con paginación."""
         # Se podría filtrar por is_active == True si la columna existe (soft deletes)
-        statement = select(self.model).offset(skip).limit(limit)
+        statement = select(self.model).order_by(self.model.id).offset(skip).limit(limit)
         result = db.execute(statement)
         return list(result.scalars().all())
 
@@ -62,7 +62,7 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         obj_in_data = obj_in.model_dump()
         db_obj = self.model(**obj_in_data)
         db.add(db_obj)
-        logger.info(f"Nuevo registro preparado para creación en {self.model.__name__} con datos: {obj_in_data}")
+        logger.info("Nuevo registro en %s; campos: %s", self.model.__name__, sorted(obj_in_data))
         return db_obj
 
     def update(
@@ -81,7 +81,7 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             update_data = obj_in.model_dump(exclude_unset=True) 
 
         obj_id = getattr(db_obj, 'id', 'N/A')
-        logger.debug(f"Actualizando {self.model.__name__} ID {obj_id} con datos: {update_data}")
+        logger.debug("Actualizando %s ID %s; campos: %s", self.model.__name__, obj_id, sorted(update_data))
 
         if update_data:
             for field, value in update_data.items():

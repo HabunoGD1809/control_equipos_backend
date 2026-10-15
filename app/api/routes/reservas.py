@@ -5,6 +5,8 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import select
+from app.models.reserva_equipo import ReservaEquipo as ReservaModel
 from sqlalchemy.exc import IntegrityError
 from psycopg.errors import ExclusionViolation
 
@@ -90,9 +92,13 @@ def read_reservas(
     Requiere el permiso: `ver_reservas`.
     """
     logger.info(f"Usuario '{current_user.nombre_usuario}' listando reservas con filtros.")
-    # TODO implementar el filtrado en el servicio o aquí mismo
-    reservas = reserva_equipo_service.get_multi(db, skip=skip, limit=limit)
-    return reservas
+    statement = select(ReservaModel)
+    if equipo_id: statement = statement.where(ReservaModel.equipo_id == equipo_id)
+    if usuario_id: statement = statement.where(ReservaModel.usuario_solicitante_id == usuario_id)
+    if estado: statement = statement.where(ReservaModel.estado == estado)
+    if start_date: statement = statement.where(ReservaModel.fecha_hora_fin >= start_date)
+    if end_date: statement = statement.where(ReservaModel.fecha_hora_inicio <= end_date)
+    return list(db.scalars(statement.order_by(ReservaModel.fecha_hora_inicio.desc()).offset(skip).limit(limit)))
 
 @router.get("/{reserva_id}",
             response_model=ReservaEquipo,

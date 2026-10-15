@@ -44,7 +44,7 @@ class DocumentacionService(BaseService[Documentacion, DocumentacionCreateInterna
 
         if not obj_in.equipo_id and not obj_in.mantenimiento_id and not obj_in.licencia_id:
              logger.error("Intento de crear documentación sin asociación a Equipo, Mantenimiento o Licencia.")
-             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="El documento debe estar asociado al menos a un Equipo, Mantenimiento o Licencia.")
+             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="El documento debe estar asociado al menos a un Equipo, Mantenimiento o Licencia.")
 
         create_data = obj_in.model_dump()
         db_obj = self.model(**create_data)

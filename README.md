@@ -84,12 +84,12 @@ El método recomendado para ejecutar este proyecto es usando Docker, que gestion
 
 1.  **Clonar el Repositorio**
     ```bash
-    git clone [https://github.com/HabunoGD1809/control_equipos_backend.git](https://github.com/HabunoGD1809/control_equipos_backend.git)
+    git clone https://github.com/HabunoGD1809/control_equipos_backend.git
     cd control_equipos_backend
     ```
 
 2.  **Configurar Variables de Entorno**
-    Copia el archivo de ejemplo y edítalo. Es crucial configurar las credenciales del superusuario y la clave secreta.
+    Copia el archivo de ejemplo y configura PostgreSQL, `REDIS_PASSWORD`, `SUPERUSER_*` y dos claves de tokens distintas. La guía vigente está en [ENTREGA_DESDE_CERO.md](ENTREGA_DESDE_CERO.md). Compose incluye el frontend y prepara automáticamente la migración y el administrador.
     ```bash
     cp .env.example .env
     ```
@@ -102,20 +102,20 @@ El método recomendado para ejecutar este proyecto es usando Docker, que gestion
 3.  **Levantar los Contenedores**
     Este comando construirá y levantará los contenedores del backend y la base de datos en segundo plano.
     ```bash
-    docker-compose up --build -d
+    docker compose up --build -d --wait
     ```
 
 4.  **Crear la Estructura de la Base de Datos**
     Con los contenedores corriendo, ejecuta este comando para que Alembic cree todas las tablas. **Solo necesitas hacer esto la primera vez que configuras el proyecto.**
     ```bash
-    docker-compose exec backend alembic upgrade head
+    docker compose exec backend uv run --frozen --no-sync alembic upgrade head
     ```
     *Cada vez que descargues nuevos cambios del repositorio que incluyan una nueva migración, deberás ejecutar este comando de nuevo para actualizar la base de datos.*
 
 5.  **Crear el Usuario Administrador**
     Ejecuta el script para crear el primer usuario con rol de administrador. Este paso es esencial para poder empezar a usar el sistema.
     ```bash
-    docker-compose exec backend python scripts/create_superuser.py
+    docker compose exec backend uv run --frozen --no-sync python scripts/bootstrap.py --from-env
     ```
 
 ¡Listo! La API estará corriendo y accesible en `http://localhost:8086`.

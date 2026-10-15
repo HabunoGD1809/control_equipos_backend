@@ -2,7 +2,7 @@ import uuid
 from typing import Any, Optional
 from datetime import datetime
 
-from pydantic import BaseModel, Field, ConfigDict, computed_field
+from pydantic import BaseModel, Field, ConfigDict, computed_field, model_validator
 
 from .enums import TipoMovimientoEquipoEnum, EstadoMovimientoEquipoEnum
 from .equipo import EquipoSimple
@@ -19,7 +19,7 @@ class MovimientoBase(BaseModel):
     ubicacion_destino_id: Optional[uuid.UUID] = Field(None, description="ID de la ubicación destino")
     proposito: Optional[str] = Field(None, description="Motivo o propósito del movimiento")
     empleado_destino_id: Optional[uuid.UUID] = Field(None, description="ID del Empleado (Custodio) al que se le asigna el equipo")
-    recibido_por: Optional[str] = Field(None, description="Nombre en texto libre solo para recepciones externas")
+    recibido_por: Optional[str] = Field(None, description="Nombre histórico del receptor; se registra al confirmar la recepción")
     observaciones: Optional[str] = Field(None, description="Notas u observaciones adicionales")
 
 # --- Schema para Creación ---
@@ -33,12 +33,27 @@ class MovimientoUpdate(BaseModel):
     fecha_retorno: Optional[datetime] = None
     recibido_por: Optional[str] = None
     observaciones: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
 
 # --- Schema para Cambio de Estado (Máquina de Estados) ---
 class MovimientoEstadoUpdate(BaseModel):
     """Schema específico para autorizar, rechazar o confirmar recepción de un movimiento."""
     estado: EstadoMovimientoEquipoEnum = Field(..., description="El nuevo estado del movimiento")
     observaciones: Optional[str] = Field(None, description="Justificación de la decisión")
+    empleado_receptor_id: Optional[uuid.UUID] = None
+    recibido_por: Optional[str] = Field(None, min_length=2, max_length=255)
+    entidad_receptora: Optional[str] = Field(None, min_length=2, max_length=255)
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    @model_validator(mode="after")
+    def validate_receipt_identity(self):
+        if self.empleado_receptor_id and (self.recibido_por or self.entidad_receptora):
+            raise ValueError("Seleccione un empleado o identifique un receptor externo, no ambos.")
+        if (self.recibido_por or self.entidad_receptora) and not (self.recibido_por and self.entidad_receptora):
+            raise ValueError("La recepción externa requiere nombre y entidad receptora.")
+        if self.estado != EstadoMovimientoEquipoEnum.COMPLETADO and (self.empleado_receptor_id or self.recibido_por or self.entidad_receptora):
+            raise ValueError("Los datos del receptor se registran al completar la entrega.")
+        return self
 
 # --- Schema Interno DB ---
 class MovimientoInDBBase(MovimientoBase):
@@ -49,6 +64,10 @@ class MovimientoInDBBase(MovimientoBase):
     fecha_hora: datetime
     fecha_retorno: Optional[datetime]
     estado: EstadoMovimientoEquipoEnum
+    empleado_receptor_id: Optional[uuid.UUID] = None
+    confirmado_por_id: Optional[uuid.UUID] = None
+    fecha_recepcion: Optional[datetime] = None
+    entidad_receptora: Optional[str] = None
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
@@ -60,6 +79,13 @@ class Movimiento(MovimientoInDBBase):
     usuario_registrador: Optional[UsuarioSimple] = None
     usuario_autorizador: Optional[UsuarioSimple] = None
     empleado_destino: Optional[EmpleadoSimple] = None
+    empleado_receptor: Optional[EmpleadoSimple] = None
+    usuario_confirmador: Optional[UsuarioSimple] = None
+    componentes_origen: dict = Field(default_factory=dict, exclude=True)
+
+    @computed_field
+    def equipos_incluidos(self) -> int:
+        return 1 + len(self.componentes_origen)
     
     ubicacion_origen: Optional[Any] = Field(default=None, exclude=True)
     ubicacion_destino: Optional[Any] = Field(default=None, exclude=True)

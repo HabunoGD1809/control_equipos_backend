@@ -57,6 +57,7 @@ class Usuario(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     requiere_cambio_contrasena: Mapped[bool] = mapped_column(Boolean, default=True)
 
     rol: Mapped["Rol"] = relationship("Rol", back_populates="usuarios", lazy="selectin")
@@ -71,68 +72,68 @@ class Usuario(Base):
         "Movimiento",
         foreign_keys="Movimiento.usuario_id",
         back_populates="usuario_registrador",
-        lazy="selectin"
+        lazy="select"
     )
     movimientos_autorizados: Mapped[List["Movimiento"]] = relationship(
         "Movimiento",
         foreign_keys="Movimiento.autorizado_por",
         back_populates="usuario_autorizador",
-        lazy="selectin"
+        lazy="select"
     )
     notificaciones: Mapped[List["Notificacion"]] = relationship(
         "Notificacion",
         back_populates="usuario",
-        lazy="selectin",
+        lazy="select",
         cascade="all, delete-orphan"
     )
     logs_acceso: Mapped[List["LoginLog"]] = relationship(
         "LoginLog",
         back_populates="usuario",
-        lazy="selectin"
+        lazy="select"
     )
     documentos_subidos: Mapped[List["Documentacion"]] = relationship(
         "Documentacion",
         foreign_keys="Documentacion.subido_por",
         back_populates="subido_por_usuario",
-        lazy="selectin"
+        lazy="select"
     )
     documentos_verificados: Mapped[List["Documentacion"]] = relationship(
         "Documentacion",
         foreign_keys="Documentacion.verificado_por",
         back_populates="verificado_por_usuario",
-        lazy="selectin"
+        lazy="select"
     )
     licencias_asignadas: Mapped[List["AsignacionLicencia"]] = relationship(
         "AsignacionLicencia",
         foreign_keys="AsignacionLicencia.usuario_id",
         back_populates="usuario",
-        lazy="selectin",
+        lazy="select",
         cascade="all, delete-orphan"
     )
     reservas_solicitadas: Mapped[List["ReservaEquipo"]] = relationship(
         "ReservaEquipo",
         foreign_keys="ReservaEquipo.usuario_solicitante_id",
         back_populates="solicitante", 
-        lazy="selectin",
+        lazy="select",
         cascade="all, delete-orphan"
     )
     reservas_aprobadas: Mapped[List["ReservaEquipo"]] = relationship(
         "ReservaEquipo",
         foreign_keys="ReservaEquipo.aprobado_por_id",
         back_populates="aprobado_por",
-        lazy="selectin"
+        lazy="select"
     )
     movimientos_inventario_registrados: Mapped[List["InventarioMovimiento"]] = relationship(
         "InventarioMovimiento",
         foreign_keys="InventarioMovimiento.usuario_id",
         back_populates="usuario_registrador",
-        lazy="selectin"
+        lazy="select"
     )
     
     reportes_solicitados: Mapped[List["Reporte"]] = relationship(
         "Reporte",
         back_populates="usuario",
-        lazy="selectin",
+        lazy="select",
         cascade="all, delete-orphan"
     )
 

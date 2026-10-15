@@ -1,6 +1,9 @@
 import logging
 from pathlib import Path
 import os
+import asyncio
+from contextlib import suppress
+from app.core.maintenance import maintenance_loop
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -9,6 +12,7 @@ from starlette.routing import Mount
 from contextlib import asynccontextmanager
 
 from app.core.config import settings
+from app.core.event_broker import broker
 from app.api.routes import api_router
 from app.core.logging_config import setup_logging
 from app.core.error_handlers import register_error_handlers
@@ -34,7 +38,16 @@ async def lifespan(app: FastAPI):
     logger.info("*"*50)
     # --- Fin de logs añadidos ---
 
-    yield # La aplicación se ejecuta
+    await broker.start()
+    maintenance = asyncio.create_task(maintenance_loop()) if settings.REPORT_EXECUTION_MODE == "background" else None
+    try:
+        yield
+    finally:
+        if maintenance:
+            maintenance.cancel()
+            with suppress(asyncio.CancelledError):
+                await maintenance
+        await broker.stop()
 
     # Código de apagado
     logger.info("*"*50)
@@ -68,24 +81,7 @@ else:
 # --- Registrar Manejadores de Errores ---
 register_error_handlers(app)
 
-# --- Montar directorio estático para uploads ---
-uploads_path = Path(settings.UPLOADS_DIRECTORY)
-uploads_path.mkdir(parents=True, exist_ok=True)
-static_route_prefix = f"/static/{uploads_path.name}"
-try:
-    is_mounted = any(
-        isinstance(route, Mount) and route.path == static_route_prefix
-        for route in app.routes
-    )
-
-    if not is_mounted:
-         app.mount(static_route_prefix, StaticFiles(directory=uploads_path), name="uploads")
-         logger.info(f"Sirviendo archivos estáticos desde '{uploads_path}' en ruta '{static_route_prefix}'")
-    else:
-        logger.debug(f"Ruta estática en '{static_route_prefix}' ya parece estar montada.")
-except Exception as e:
-     logger.error(f"Error inesperado al montar directorio estático: {e}", exc_info=True)
-
+# Las fotos de perfil se sirven por la ruta autenticada /usuarios/avatar/{filename}.
 
 # --- Incluir Routers de la API ---
 app.include_router(api_router, prefix=settings.API_V1_STR)
@@ -95,3 +91,19 @@ logger.info(f"Routers de API incluidos bajo el prefijo: {settings.API_V1_STR}")
 @app.get("/", tags=["Root"], include_in_schema=False)
 def read_root() -> dict:
     return {"status": "ok", "message": f"Bienvenido a {settings.PROJECT_NAME}"}
+
+@app.get("/health", include_in_schema=False)
+def health():
+    from fastapi.responses import JSONResponse
+    from app.db.session import SessionLocal
+    from sqlalchemy import text
+    try:
+        with SessionLocal() as db:
+            db.execute(text("SELECT 1"))
+            actual_database = db.scalar(text("SELECT current_database()"))
+        payload = {"status": "ok"}
+        if "_test" in actual_database:
+            payload["test_database"] = actual_database
+        return payload
+    except Exception:
+        return JSONResponse({"status": "unavailable"}, status_code=503)

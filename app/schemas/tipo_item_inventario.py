@@ -1,7 +1,7 @@
 import uuid
-from typing import Optional
+from typing import Optional, Literal, List
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 
 from .enums import UnidadMedidaEnum
 from .proveedor import ProveedorSimple
@@ -11,14 +11,33 @@ from .marca import MarcaSimple
 # ===============================================================
 # Schema Base: Campos comunes para un tipo de ítem de inventario
 # ===============================================================
-class TipoItemInventarioBase(BaseModel):
+class ConsumibleFields(BaseModel):
+    color: Optional[Literal["Negro", "Cian", "Magenta", "Amarillo", "Tricolor", "Otro"]] = None
+    tecnologia: Optional[Literal["Tóner", "Tinta", "Tambor", "Cinta", "Otro"]] = None
+    rendimiento_paginas: Optional[int] = Field(default=None, gt=0)
+    modelos_equipo_compatibles: Optional[List[str]] = Field(default=None, max_length=100)
+    es_original: bool = True
+    perecedero: bool = False
+    is_active: bool = True
+
+    @field_validator("modelos_equipo_compatibles")
+    @classmethod
+    def valid_compatibility(cls, value):
+        if value is None:
+            return value
+        cleaned = [name.strip() for name in value]
+        if any(not name or len(name) > 100 for name in cleaned):
+            raise ValueError("Cada modelo compatible debe contener entre 1 y 100 caracteres.")
+        return list(dict.fromkeys(cleaned))
+
+class TipoItemInventarioBase(ConsumibleFields):
     """Campos base que definen un tipo de ítem de inventario."""
     nombre: str = Field(
         ...,
         max_length=100,
         description="Nombre descriptivo del ítem (ej: Toner HP 85A)"
     )
-    categoria: str = Field(
+    categoria: Literal['Consumible', 'Parte Repuesto', 'Accesorio', 'Otro'] = Field(
         ...,
         max_length=100,
         description="Categoría para agrupar ítems (ej: Cables, Consumibles Impresión)"
@@ -54,13 +73,13 @@ class TipoItemInventarioCreate(TipoItemInventarioBase):
 # ===============================================================
 # Schema para Actualización
 # ===============================================================
-class TipoItemInventarioUpdate(BaseModel):
+class TipoItemInventarioUpdate(ConsumibleFields):
     """
     Schema para actualizar un tipo de ítem. Todos los campos son opcionales
     para permitir actualizaciones parciales (PATCH).
     """
     nombre: Optional[str] = Field(None, max_length=100)
-    categoria: Optional[str] = Field(None, max_length=100)
+    categoria: Optional[Literal['Consumible', 'Parte Repuesto', 'Accesorio', 'Otro']] = Field(None)
     descripcion: Optional[str] = None
     unidad_medida: Optional[UnidadMedidaEnum] = None
     stock_minimo: Optional[int] = Field(None, ge=0)
@@ -96,7 +115,7 @@ class TipoItemInventario(TipoItemInventarioInDBBase):
 # ===============================================================
 # Schema Simple (para listas o referencias)
 # ===============================================================
-class TipoItemInventarioSimple(BaseModel):
+class TipoItemInventarioSimple(ConsumibleFields):
     """Schema simplificado, útil para vistas de lista o referencias en otros objetos."""
     id: uuid.UUID
     nombre: str

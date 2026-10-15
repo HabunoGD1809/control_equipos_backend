@@ -3,13 +3,14 @@ from typing import Any, Dict, Optional, List
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator, model_validator
 
 from .estado_equipo import EstadoEquipoSimple
 from .proveedor import ProveedorSimple
 from .marca import MarcaSimple
 from .ubicacion import UbicacionSimple
 from .empleado import EmpleadoSimple
+from .ficha_tecnica import FichaTecnica, TipoActivoEnum
 
 # ===============================================================
 # Schema Base
@@ -17,7 +18,14 @@ from .empleado import EmpleadoSimple
 class EquipoBase(BaseModel):
     """Campos base que definen un equipo."""
     nombre: str = Field(..., max_length=255, description="Nombre descriptivo del equipo")
-    numero_serie: str = Field(..., max_length=100, description="Número de serie único del fabricante")
+    tipo_activo: TipoActivoEnum = TipoActivoEnum.EQUIPO
+    especificaciones_tecnicas: FichaTecnica = Field(default_factory=dict)
+    numero_serie: str = Field(..., min_length=1, max_length=100, description="Número de serie único del fabricante")
+    @field_validator("numero_serie", mode="before")
+    @classmethod
+    def strip_serial(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
     codigo_interno: Optional[str] = Field(None, max_length=100, description="Código de activo fijo de la empresa")
     estado_id: uuid.UUID = Field(..., description="ID del estado actual del equipo")
     ubicacion_id: Optional[uuid.UUID] = None
@@ -27,7 +35,7 @@ class EquipoBase(BaseModel):
     fecha_adquisicion: Optional[date] = None
     fecha_puesta_marcha: Optional[date] = Field(None, description="Fecha en que el equipo entró en operación")
     fecha_garantia_expiracion: Optional[date] = None
-    valor_adquisicion: Optional[Decimal] = Field(None, max_digits=12, decimal_places=2, description="Costo de compra del equipo")
+    valor_adquisicion: Optional[Decimal] = Field(None, ge=0, max_digits=12, decimal_places=2, description="Costo de compra del equipo")
     proveedor_id: Optional[uuid.UUID] = Field(None, description="ID del proveedor que suministró el equipo")
     centro_costo: Optional[str] = Field(None, max_length=100, description="Departamento o proyecto asociado")
     notas: Optional[str] = Field(None, description="Campo libre para observaciones generales")
@@ -37,7 +45,11 @@ class EquipoBase(BaseModel):
 # ===============================================================
 class EquipoCreate(EquipoBase):
     """Schema utilizado para registrar un nuevo equipo."""
-    pass
+    @model_validator(mode="after")
+    def assignment_requires_movement(self):
+        if self.empleado_asignado_id:
+            raise ValueError("Registra primero el equipo y asígnalo mediante Movimientos para conservar custodio, responsable y recepción.")
+        return self
 
 # ===============================================================
 # Schema para Actualización
@@ -48,6 +60,8 @@ class EquipoUpdate(BaseModel):
     para permitir actualizaciones parciales (PATCH).
     """
     nombre: Optional[str] = Field(None, max_length=255)
+    tipo_activo: TipoActivoEnum = None
+    especificaciones_tecnicas: FichaTecnica = Field(default_factory=dict)
     estado_id: Optional[uuid.UUID] = None
     ubicacion_id: Optional[uuid.UUID] = None
     empleado_asignado_id: Optional[uuid.UUID] = None
@@ -56,7 +70,7 @@ class EquipoUpdate(BaseModel):
     fecha_adquisicion: Optional[date] = None
     fecha_puesta_marcha: Optional[date] = None
     fecha_garantia_expiracion: Optional[date] = None
-    valor_adquisicion: Optional[Decimal] = Field(None, max_digits=12, decimal_places=2)
+    valor_adquisicion: Optional[Decimal] = Field(None, ge=0, max_digits=12, decimal_places=2)
     proveedor_id: Optional[uuid.UUID] = None
     centro_costo: Optional[str] = Field(None, max_length=100)
     notas: Optional[str] = None

@@ -2,13 +2,13 @@ import logging
 from typing import Any, List, Optional
 from uuid import UUID as PyUUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Body, Request, Response
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import DBAPIError as SQLAlchemyDBAPIError
 
 from app.api import deps
 from app.schemas.movimiento import Movimiento, MovimientoCreate, MovimientoUpdate, MovimientoEstadoUpdate
-from app.services.movimiento import movimiento_service
+from app.services.movimiento import movimiento_service, can_receive_movement
 from app.models.usuario import Usuario as UsuarioModel
 from app.core import permissions as perms
 from app.core.security import user_has_permissions
@@ -22,6 +22,13 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/{movimiento_id}/acuse", dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_MOVIMIENTOS]))], summary="Constancia PDF de entrega o recepción")
+def print_receipt(movimiento_id: PyUUID, db: Session = Depends(deps.get_db), current_user: UsuarioModel = Depends(deps.get_current_active_user)):
+    from app.services.asset_documents import receipt_document
+    movimiento = movimiento_service.get_or_404(db, id=movimiento_id)
+    return Response(receipt_document(db, movimiento, current_user), media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="acuse-{movimiento.id}.pdf"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @router.post(
@@ -185,11 +192,16 @@ def change_movimiento_estado(
     db_movimiento = movimiento_service.get_or_404(db, id=movimiento_id)
 
     # Verificación de permiso adicional para acciones de autorización
-    if estado_in.estado in ["Autorizado", "Rechazado"]:
+    if estado_in.estado == "Autorizado" or (estado_in.estado == "Rechazado" and db_movimiento.estado == "Pendiente"):
         if not user_has_permissions(current_user, {perms.PERM_AUTORIZAR_MOVIMIENTOS}):
             logger.warning(f"Acceso denegado: '{current_user.nombre_usuario}' intentó autorizar/rechazar movimiento sin permiso.")
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No tiene permisos para autorizar o rechazar movimientos.")
 
+    if estado_in.estado == "Cancelado" and not user_has_permissions(current_user, {perms.PERM_CANCELAR_MOVIMIENTOS}):
+        raise HTTPException(403, "No tiene permiso para cancelar movimientos.")
+    if estado_in.estado in {"Completado", "En Proceso"} or (estado_in.estado == "Rechazado" and db_movimiento.estado != "Pendiente"):
+        if not can_receive_movement(current_user, db_movimiento):
+            raise HTTPException(403, "Solo el custodio o un gestor de movimientos puede confirmar la recepción.")
     try:
         updated_movimiento = movimiento_service.cambiar_estado(
             db=db,

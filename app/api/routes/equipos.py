@@ -2,7 +2,7 @@ import logging
 from typing import Any, List, Optional
 from uuid import UUID as PyUUID
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File, Response
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -27,6 +27,8 @@ except ImportError:
 
 
 from app.api import deps
+from app.core.config import settings
+from app.core.security import user_has_permissions
 from app.schemas.equipo import (
     EquipoRead, EquipoCreate, EquipoUpdate,
     EquipoSearchResult, GlobalSearchResult,
@@ -47,6 +49,13 @@ from app.models.usuario import Usuario as UsuarioModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+@router.get("/{equipo_id}/ficha", dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_EQUIPOS]))], summary="Ficha PDF del activo")
+def print_equipment(equipo_id: PyUUID, db: Session = Depends(deps.get_db), current_user: UsuarioModel = Depends(deps.get_current_active_user)):
+    from app.services.asset_documents import equipment_document
+    equipo = equipo_service.get_or_404(db, id=equipo_id)
+    return Response(equipment_document(db, equipo, current_user), media_type="application/pdf", headers={"Content-Disposition": f'inline; filename="ficha-{equipo.id}.pdf"', "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
 # ==============================================================================
 # Endpoints para EQUIPOS (CRUD y Búsqueda)
@@ -131,12 +140,14 @@ async def bulk_upload_equipos(
     """
     logger.info(f"Usuario '{current_user.nombre_usuario}' iniciando carga masiva con archivo '{file.filename}'.")
 
-    if not file.filename or not file.filename.endswith(".csv"):
+    if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="El archivo debe ser un CSV.")
 
-    content = await file.read()
+    content = await file.read(settings.MAX_FILE_SIZE_BYTES + 1)
+    if len(content) > settings.MAX_FILE_SIZE_BYTES:
+        raise HTTPException(status_code=413, detail="El CSV supera el límite de 10 MB.")
     try:
-        decoded_content = content.decode('utf-8')
+        decoded_content = content.decode('utf-8-sig')
     except UnicodeDecodeError:
         raise HTTPException(status_code=400, detail="El archivo no está codificado en UTF-8.")
 
@@ -145,6 +156,9 @@ async def bulk_upload_equipos(
         db.commit()
         logger.info(f"Carga masiva finalizada. Insertados: {resultados['insertados']}/{resultados['total_procesados']}.")
         return resultados
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Fallo catastrófico en carga masiva por usuario '{current_user.nombre_usuario}': {e}", exc_info=True)
@@ -162,10 +176,15 @@ def read_equipos(
     db: Session = Depends(deps.get_db),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=500),
+    q: Optional[str] = Query(None, max_length=200),
+    estado_id: Optional[PyUUID] = None,
+    proveedor_id: Optional[PyUUID] = None,
+    ubicacion_id: Optional[PyUUID] = None,
+    ubicacion_actual: Optional[str] = Query(None, max_length=200),
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
     logger.info(f"Usuario '{current_user.nombre_usuario}' listando equipos (skip: {skip}, limit: {limit}).")
-    return equipo_service.get_multi(db, skip=skip, limit=limit)
+    return equipo_service.get_multi(db, skip=skip, limit=limit, q=q, estado_id=estado_id, proveedor_id=proveedor_id, ubicacion_id=ubicacion_id, ubicacion_actual=ubicacion_actual)
 
 
 @router.get(
@@ -199,7 +218,13 @@ def search_global(
     current_user: UsuarioModel = Depends(deps.get_current_active_user),
 ) -> Any:
     logger.info(f"Usuario '{current_user.nombre_usuario}' realizando búsqueda global con término: '{q}'.")
-    return equipo_service.search_global(db=db, termino=q)
+    permissions = {permission.nombre for permission in current_user.rol.permisos} if current_user.rol else set()
+    allowed = {"equipo"}
+    if perms.PERM_VER_DOCUMENTOS in permissions:
+        allowed.add("documento")
+    if perms.PERM_VER_MANTENIMIENTOS in permissions:
+        allowed.add("mantenimiento")
+    return [result for result in equipo_service.search_global(db=db, termino=q) if result.tipo.lower() in allowed]
 
 
 @router.get(
@@ -235,7 +260,11 @@ def read_equipo_timeline(
     """
     logger.info(f"Usuario '{current_user.nombre_usuario}' solicitando Timeline del equipo ID: {equipo_id}.")
     equipo_service.get_or_404(db, id=equipo_id)
-    return timeline_service.get_equipo_timeline(db, equipo_id)
+    allowed = {"equipos"}
+    for permission, table in [(perms.PERM_VER_MOVIMIENTOS, "movimientos"), (perms.PERM_VER_MANTENIMIENTOS, "mantenimiento"), (perms.PERM_VER_DOCUMENTOS, "documentacion")]:
+        if user_has_permissions(current_user, {permission}):
+            allowed.add(table)
+    return timeline_service.get_equipo_timeline(db, equipo_id, allowed_tables=allowed)
 
 
 @router.put(

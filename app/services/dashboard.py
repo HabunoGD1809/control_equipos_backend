@@ -29,25 +29,10 @@ class DashboardService:
         total_equipos = equipo_service.get_count(db)
 
         equipos_estado_list: List[EquipoPorEstado] = []
-        try:
-            stmt_view = text("SELECT estado_id, estado_nombre, cantidad_equipos, estado_color FROM control_equipos.mv_equipos_estado ORDER BY estado_nombre")
-            result_view = db.execute(stmt_view)
-            equipos_estado_list = [EquipoPorEstado(**row._mapping) for row in result_view] # type: ignore
-        except Exception as e_view:
-            logger.warning(f"No se pudo usar la vista materializada 'mv_equipos_estado'. Calculando dinámicamente...")
-            stmt_query = (
-                select(
-                    EstadoEquipo.id.label("estado_id"),
-                    EstadoEquipo.nombre.label("estado_nombre"),
-                    sql_func.count(Equipo.id).label("cantidad_equipos"),
-                    EstadoEquipo.color_hex.label("estado_color")
-                )
-                .outerjoin(Equipo, EstadoEquipo.id == Equipo.estado_id)
-                .group_by(EstadoEquipo.id, EstadoEquipo.nombre, EstadoEquipo.color_hex)
-                .order_by(EstadoEquipo.nombre)
-            )
-            result_query = db.execute(stmt_query)
-            equipos_estado_list = [EquipoPorEstado(**row._mapping) for row in result_query] # type: ignore
+        stmt_query = (select(EstadoEquipo.id.label("estado_id"), EstadoEquipo.nombre.label("estado_nombre"), sql_func.count(Equipo.id).label("cantidad_equipos"), EstadoEquipo.color_hex.label("estado_color"))
+            .outerjoin(Equipo, EstadoEquipo.id == Equipo.estado_id)
+            .group_by(EstadoEquipo.id, EstadoEquipo.nombre, EstadoEquipo.color_hex).order_by(EstadoEquipo.nombre))
+        equipos_estado_list = [EquipoPorEstado(**row._mapping) for row in db.execute(stmt_query)]
 
         fecha_limite_mant = datetime.now(timezone.utc) + timedelta(days=30)
         stmt_mant_count = (
@@ -82,8 +67,8 @@ class DashboardService:
         )
         stmt_low_stock_count = (
             select(sql_func.count(TipoItemInventario.id))
-            .join(subquery_stock, TipoItemInventario.id == subquery_stock.c.tipo_item_id)
-            .where(subquery_stock.c.stock_total <= TipoItemInventario.stock_minimo)
+            .outerjoin(subquery_stock, TipoItemInventario.id == subquery_stock.c.tipo_item_id)
+            .where(TipoItemInventario.is_active.is_(True), sql_func.coalesce(subquery_stock.c.stock_total, 0) <= TipoItemInventario.stock_minimo)
         )
         items_bajo_stock_count = db.execute(stmt_low_stock_count).scalar_one_or_none() or 0
         

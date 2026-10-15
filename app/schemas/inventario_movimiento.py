@@ -30,6 +30,8 @@ class InventarioMovimientoBase(BaseModel):
     costo_unitario: Optional[Decimal] = Field(None, ge=0, decimal_places=4, description="Costo unitario del ítem al momento del movimiento.")
     motivo_ajuste: Optional[str] = Field(None, description="Motivo requerido si el movimiento es de tipo 'Ajuste'.")
     referencia_externa: Optional[str] = Field(None, max_length=255, description="Referencia externa (ej: N° de factura, N° de devolución).")
+    procedencia: Optional[str] = Field(None, max_length=150, description="Departamento o entidad que abastece, conservado en el historial.")
+    entregado_por: Optional[str] = Field(None, max_length=150)
     equipo_asociado_id: Optional[uuid.UUID] = Field(None, description="ID del equipo al que se asignó el consumible/parte.")
     mantenimiento_id: Optional[uuid.UUID] = Field(None, description="ID del mantenimiento asociado al uso del ítem.")
     referencia_transferencia: Optional[uuid.UUID] = Field(None, description="ID para enlazar movimientos de transferencia opuestos.")
@@ -39,6 +41,9 @@ class InventarioMovimientoBase(BaseModel):
     def check_logic_by_type(self) -> 'InventarioMovimientoBase':
         """Valida que los campos requeridos estén presentes según el tipo de movimiento."""
         tipo = self.tipo_movimiento
+        if tipo == TipoMovimientoInvEnum.ENTRADA_ABASTECIMIENTO:
+            if not (self.procedencia or "").strip() or not (self.referencia_externa or "").strip():
+                raise ValueError("El abastecimiento requiere procedencia y número de acta, remisión u orden.")
         
         # Movimientos que implican una salida de stock
         if tipo in [TipoMovimientoInvEnum.SALIDA_USO, TipoMovimientoInvEnum.SALIDA_DESCARTE, TipoMovimientoInvEnum.AJUSTE_NEGATIVO, TipoMovimientoInvEnum.TRANSFERENCIA_SALIDA, TipoMovimientoInvEnum.DEVOLUCION_PROVEEDOR]:
@@ -46,10 +51,15 @@ class InventarioMovimientoBase(BaseModel):
                 raise ValueError("ubicacion_origen_id es requerida para este tipo de movimiento.")
 
         # Movimientos que implican una entrada de stock
-        if tipo in [TipoMovimientoInvEnum.ENTRADA_COMPRA, TipoMovimientoInvEnum.AJUSTE_POSITIVO, TipoMovimientoInvEnum.TRANSFERENCIA_ENTRADA, TipoMovimientoInvEnum.DEVOLUCION_INTERNA]:
+        if tipo in [TipoMovimientoInvEnum.ENTRADA_COMPRA, TipoMovimientoInvEnum.ENTRADA_ABASTECIMIENTO, TipoMovimientoInvEnum.AJUSTE_POSITIVO, TipoMovimientoInvEnum.TRANSFERENCIA_ENTRADA, TipoMovimientoInvEnum.DEVOLUCION_INTERNA]:
             if not self.ubicacion_destino_id:
                 raise ValueError("ubicacion_destino_id es requerida para este tipo de movimiento.")
         
+        if tipo in [TipoMovimientoInvEnum.TRANSFERENCIA_SALIDA, TipoMovimientoInvEnum.TRANSFERENCIA_ENTRADA]:
+            origen = (self.lote_origen or "N/A").strip() or "N/A"
+            destino = (self.lote_destino or "N/A").strip() or "N/A"
+            if not self.ubicacion_origen_id or not self.ubicacion_destino_id or (self.ubicacion_origen_id == self.ubicacion_destino_id and origen == destino):
+                raise ValueError("La transferencia requiere una ubicación o un lote de destino diferente.")
         # Movimientos de ajuste que requieren un motivo
         if tipo in [TipoMovimientoInvEnum.AJUSTE_POSITIVO, TipoMovimientoInvEnum.AJUSTE_NEGATIVO]:
             if not self.motivo_ajuste:

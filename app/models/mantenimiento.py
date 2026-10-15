@@ -6,7 +6,7 @@ from decimal import Decimal
 from sqlalchemy import (
     Column, String, Text, DateTime, func, ForeignKey, Integer, Numeric
 )
-from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
+from sqlalchemy.dialects.postgresql import JSONB, UUID, TSVECTOR
 
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 
@@ -26,6 +26,7 @@ class Mantenimiento(Base):
     """
     __tablename__ = "mantenimiento"
 
+    componentes_origen: Mapped[dict] = mapped_column(JSONB, default=dict, server_default="{}", nullable=False)
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     equipo_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("equipos.id", ondelete="CASCADE"), index=True)
     tipo_mantenimiento_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tipos_mantenimiento.id", ondelete="RESTRICT"), index=True)
@@ -38,6 +39,7 @@ class Mantenimiento(Base):
     
     tecnico_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("tecnicos_mantenimiento.id", ondelete="RESTRICT"), index=True)
     
+    estado_equipo_anterior_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), ForeignKey("estados_equipo.id", ondelete="RESTRICT"), nullable=True)
     estado: Mapped[str] = mapped_column(String(50), default='Programado', index=True)
     prioridad: Mapped[int] = mapped_column(Integer, default=0, index=True)
     observaciones: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

@@ -159,6 +159,7 @@ logs/
 *.log.*
 log.txt
 uploads/
+backups/
 
 # OS generated files
 .DS_Store
@@ -168,3 +169,5 @@ uploads/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+verification/

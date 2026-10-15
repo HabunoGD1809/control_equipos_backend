@@ -1,5 +1,6 @@
 import bcrypt
 import hashlib
+import hmac
 import logging
 
 logging.basicConfig(level=logging.ERROR)
@@ -12,7 +13,11 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     SOLO usar para contraseñas de usuarios, nunca para tokens.
     """
     try:
-        plain_password_bytes = plain_password.encode('utf-8')
+        if hashed_password.startswith("bcrypt-sha256$"):
+            plain_password_bytes = hashlib.sha256(plain_password.encode('utf-8')).hexdigest().encode('ascii')
+            hashed_password = hashed_password.removeprefix("bcrypt-sha256$")
+        else:
+            plain_password_bytes = plain_password.encode('utf-8')
         hashed_password_bytes = hashed_password.encode('utf-8')
         return bcrypt.checkpw(plain_password_bytes, hashed_password_bytes)
     except ValueError as e:
@@ -28,10 +33,10 @@ def get_password_hash(password: str) -> str:
     Genera el hash de una contraseña usando bcrypt.
     SOLO usar para contraseñas de usuarios, nunca para tokens.
     """
-    password_bytes = password.encode('utf-8')
+    password_bytes = hashlib.sha256(password.encode('utf-8')).hexdigest().encode('ascii')
     salt = bcrypt.gensalt()
     hashed_password_bytes = bcrypt.hashpw(password_bytes, salt)
-    return hashed_password_bytes.decode('utf-8')
+    return 'bcrypt-sha256$' + hashed_password_bytes.decode('utf-8')
 
 
 def hash_token(token: str) -> str:
@@ -46,4 +51,4 @@ def verify_token_hash(plain_token: str, token_hash: str) -> bool:
     """
     Verifica si un token plano coincide con su hash SHA-256 almacenado.
     """
-    return hashlib.sha256(plain_token.encode('utf-8')).hexdigest() == token_hash
+    return hmac.compare_digest(hashlib.sha256(plain_token.encode('utf-8')).hexdigest(), token_hash)

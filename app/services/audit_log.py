@@ -4,9 +4,10 @@ from uuid import UUID
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
-from sqlalchemy import select
+from sqlalchemy import select, or_, Text
 
 from app.models.audit_log import AuditLog as AuditLogModel
+from app.models.usuario import Usuario
 
 logger = logging.getLogger(__name__)
 
@@ -50,14 +51,16 @@ class AuditLogService:
             f"DBUser='{username}', AppUserID='{app_user_id}', RecordPKValue='{record_pk_value}', "
             f"RangoTiempo='{start_time}-{end_time}' (Skip: {skip}, Limit: {limit})"
         )
-        statement = select(self.model) # type: ignore[var-annotated]
+        statement = select(self.model, Usuario.nombre_usuario).outerjoin(Usuario, Usuario.id == self.model.app_user_id)
+        def pattern(value):
+            return '%' + value.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
         
         if table_name:
-            statement = statement.where(self.model.table_name.ilike(f"%{table_name}%")) # type: ignore[attr-defined]
+            statement = statement.where(self.model.table_name.ilike(pattern(table_name)))
         if operation:
             statement = statement.where(self.model.operation == operation) # type: ignore[attr-defined]
         if username: 
-            statement = statement.where(self.model.username.ilike(f"%{username}%")) # type: ignore[attr-defined]
+            statement = statement.where(or_(self.model.username.ilike(pattern(username)), Usuario.nombre_usuario.ilike(pattern(username))))
         if app_user_id:
             statement = statement.where(self.model.app_user_id == app_user_id) # type: ignore[attr-defined]
         
@@ -91,8 +94,14 @@ class AuditLogService:
                 end_date_inclusive = end_time + timedelta(days=1, microseconds=-1)
             statement = statement.where(self.model.audit_timestamp <= end_date_inclusive) # type: ignore[attr-defined]
 
-        statement = statement.order_by(self.model.audit_timestamp.desc()).offset(skip).limit(limit) # type: ignore[attr-defined]
+        if record_pk_value:
+            statement = statement.where(or_(self.model.id.cast(Text).ilike(pattern(record_pk_value)), self.model.old_data['id'].astext.ilike(pattern(record_pk_value)), self.model.new_data['id'].astext.ilike(pattern(record_pk_value))))
+        statement = statement.order_by(self.model.audit_timestamp.desc(), self.model.id.desc()).offset(skip).limit(limit)
         result = db.execute(statement)
-        return list(result.scalars().all())
+        logs = []
+        for log, app_username in result:
+            log.app_username = app_username
+            logs.append(log)
+        return logs
 
 audit_log_service = AuditLogService()

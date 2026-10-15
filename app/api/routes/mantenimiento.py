@@ -165,6 +165,9 @@ def delete_mantenimiento(
         db.commit()
         logger.info(f"Mantenimiento ID {mantenimiento_id} (para equipo ID {equipo_id_log}) eliminado exitosamente por '{current_user.nombre_usuario}'.")
         return {"msg": f"Mantenimiento con ID {mantenimiento_id} eliminado correctamente."}
+    except HTTPException:
+        db.rollback()
+        raise
     except Exception as e:
         db.rollback()
         logger.error(f"Error inesperado eliminando mantenimiento ID {mantenimiento_id}: {e}", exc_info=True)

@@ -1,3 +1,5 @@
+from sqlalchemy import select
+from app.core.password import hash_token
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
@@ -104,15 +106,15 @@ def login_access_token(
         )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Nombre de usuario o contrasena incorrectos, o usuario bloqueado.",
+            detail="Nombre de usuario o contraseña incorrectos, o usuario bloqueado.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
     logger.info(f"Login exitoso para usuario '{username_attempt}'.")
 
     try:
-        access_token = security.create_access_token(subject=user.id)
-        refresh_token_str = security.create_refresh_token(subject=user.id)
+        access_token = security.create_access_token(subject=user.id, session_version=user.session_version)
+        refresh_token_str = security.create_refresh_token(subject=user.id, session_version=user.session_version)
 
         token_create_schema = RefreshTokenCreate(token=refresh_token_str, usuario_id=user.id)
         refresh_token_service.create_token(
@@ -152,23 +154,20 @@ def refresh_access_token(
     payload = security.decode_refresh_token(refresh_token_str)
 
     if not payload or not payload.sub:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token de refresco invalido o expirado")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token de refresco inválido o expirado")
 
-    user = usuario_service.get(db, id=payload.sub)
+    user = db.scalar(select(UsuarioModel).where(UsuarioModel.id == payload.sub).with_for_update(of=UsuarioModel).execution_options(populate_existing=True))
 
-    if not user or not usuario_service.is_active(user):
+    if not user or not usuario_service.is_active(user) or payload.ver != user.session_version:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Usuario no encontrado o inactivo")
 
-    # Buscar el token valido usando SHA-256 (no bcrypt)
-    valid_token_found = None
-    for db_token in user.refresh_tokens:
-        if (
-            db_token.revoked_at is None and
-            db_token.expires_at > datetime.now(timezone.utc) and
-            verify_token_hash(refresh_token_str, db_token.token_hash)
-        ):
-            valid_token_found = db_token
-            break
+    # Lock the exact stored token so simultaneous rotations cannot both succeed.
+    valid_token_found = db.scalar(select(RefreshTokenModel).where(
+        RefreshTokenModel.usuario_id == user.id,
+        RefreshTokenModel.token_hash == hash_token(refresh_token_str),
+        RefreshTokenModel.revoked_at.is_(None),
+        RefreshTokenModel.expires_at > datetime.now(timezone.utc)
+    ).with_for_update(of=RefreshTokenModel))
 
     if not valid_token_found:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token de refresco no es valido o ha sido revocado.")
@@ -178,8 +177,8 @@ def refresh_access_token(
         refresh_token_service.revoke_token(db, token_obj=valid_token_found, plain_token=refresh_token_str)
 
         # Crear un nuevo par de tokens
-        new_access_token = security.create_access_token(subject=user.id)
-        new_refresh_token_str = security.create_refresh_token(subject=user.id)
+        new_access_token = security.create_access_token(subject=user.id, session_version=user.session_version)
+        new_refresh_token_str = security.create_refresh_token(subject=user.id, session_version=user.session_version)
 
         ip_address = request.client.host if request.client else "N/A"
         user_agent = request.headers.get("user-agent", "N/A")
@@ -294,7 +293,7 @@ def request_password_reset(
         f"contrasena para usuario '{request_data.username_or_email}'."
     )
     try:
-        user = usuario_service.initiate_password_reset(db, username_or_email=request_data.username_or_email)
+        user = usuario_service.initiate_password_reset(db, username_or_email=request_data.username_or_email, initiated_by=current_user)
 
         nueva_notificacion = Notificacion(
             usuario_id=user.id,

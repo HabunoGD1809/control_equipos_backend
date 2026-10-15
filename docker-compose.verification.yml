@@ -1,0 +1,18 @@
+services:
+  mailpit:
+    image: axllent/mailpit:v1.31.5
+    ports: ["127.0.0.1:${MAILPIT_PUBLIC_PORT:-18025}:8025"]
+    networks: [control_equipos_net]
+  minio:
+    build:
+      context: .
+      dockerfile: Dockerfile.minio-test
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:?Configure test AWS_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:?Configure test AWS_SECRET_ACCESS_KEY}
+    command: [server, /data, --console-address, ':9001']
+    ports: ["127.0.0.1:${MINIO_PUBLIC_PORT:-19000}:9000"]
+    volumes: [minio_test_data:/data]
+    networks: [control_equipos_net]
+volumes:
+  minio_test_data:

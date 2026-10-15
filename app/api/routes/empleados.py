@@ -13,20 +13,21 @@ from app.core import permissions as perms
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+READ_EMPLOYEES = [Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS, perms.PERM_ADMINISTRAR_USUARIOS, perms.PERM_VER_EQUIPOS, perms.PERM_VER_MOVIMIENTOS, perms.PERM_ASIGNAR_LICENCIAS]))]
 
-@router.get("/", response_model=List[EmpleadoRead], summary="Listar empleados")
+@router.get("/", response_model=List[EmpleadoRead], dependencies=READ_EMPLOYEES, summary="Listar empleados")
 def read_empleados(
     db: Session = Depends(deps.get_db),
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=200),
     current_user = Depends(deps.get_current_active_user)
 ) -> Any:
     """Obtiene el catálogo de empleados."""
     return empleado_service.get_multi(db, skip=skip, limit=limit)
 
-@router.get("/search", response_model=List[EmpleadoSimple], summary="Buscar empleados")
+@router.get("/search", response_model=List[EmpleadoSimple], dependencies=READ_EMPLOYEES, summary="Buscar empleados activos")
 def search_empleados(
-    query: str = Query(..., min_length=2),
+    query: str = Query(..., min_length=2, max_length=100),
     db: Session = Depends(deps.get_db),
     current_user = Depends(deps.get_current_active_user)
 ) -> Any:
@@ -96,3 +97,8 @@ def disable_empleado(
         db.rollback()
         logger.error(f"Error desactivando empleado ID {id}: {e}", exc_info=True)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Error interno al desactivar el empleado.")
+
+
+@router.get("/{id}", response_model=EmpleadoRead, dependencies=READ_EMPLOYEES)
+def read_detail(id: UUID, db: Session = Depends(deps.get_db), current_user=Depends(deps.get_current_active_user)):
+    return empleado_service.get_or_404(db, id=id)

@@ -59,7 +59,7 @@ class BackupLogService:
                 end_date_inclusive = end_time + timedelta(days=1, microseconds=-1)
             statement = statement.where(self.model.backup_timestamp <= end_date_inclusive) # type: ignore[attr-defined]
 
-        statement = statement.order_by(self.model.backup_timestamp.desc()).offset(skip).limit(limit) # type: ignore[attr-defined]
+        statement = statement.order_by(self.model.backup_timestamp.desc(), self.model.id.desc()).offset(skip).limit(limit) # type: ignore[attr-defined]
         result = db.execute(statement)
         return list(result.scalars().all())
 

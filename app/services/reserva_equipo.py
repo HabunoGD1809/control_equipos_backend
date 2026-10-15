@@ -11,12 +11,17 @@ from sqlalchemy.exc import IntegrityError
 from app.core import permissions as perms
 from app.core.security import user_has_permissions
 from app.models.reserva_equipo import ReservaEquipo
+from app.models.equipo import Equipo
+from app.models.estado_equipo import EstadoEquipo
+from app.models.movimiento import Movimiento
 from app.models.usuario import Usuario
 from app.schemas.reserva_equipo import (
     ReservaEquipoCreate, ReservaEquipoUpdate, ReservaEquipoUpdateEstado,
     ReservaEquipoCheckInOut
 )
 from app.schemas.enums import EstadoReservaEnum
+from app.core.equipment_states import EquipmentStateCode
+from .asset_custody import physical_group, ensure_free, snapshot, propagate, lock_topology
 from .base_service import BaseService
 from .equipo import equipo_service
 
@@ -42,9 +47,11 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         """
         logger.debug(f"Usuario '{current_user.nombre_usuario}' intentando crear reserva para Equipo ID {obj_in.equipo_id} de {obj_in.fecha_hora_inicio} a {obj_in.fecha_hora_fin}")
 
+        lock_topology(db)
+        physical_group(db, obj_in.equipo_id)
         equipo = equipo_service.get_or_404(db, id=obj_in.equipo_id)
         
-        if equipo.estado.nombre != "Disponible":
+        if equipo.estado.codigo != EquipmentStateCode.AVAILABLE:
             logger.warning(f"Intento de reservar equipo '{equipo.nombre}' (ID: {equipo.id}) que no está disponible. Estado actual: '{equipo.estado.nombre}'.")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -53,7 +60,7 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
             
         if obj_in.fecha_hora_fin <= obj_in.fecha_hora_inicio:
             logger.warning("Intento de crear reserva con fecha de fin anterior o igual a la de inicio.")
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La fecha de fin de la reserva debe ser posterior a la fecha de inicio.")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="La fecha de fin de la reserva debe ser posterior a la fecha de inicio.")
 
         reserva_data = obj_in.model_dump()
         
@@ -101,7 +108,7 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
 
         if nueva_fecha_fin <= nueva_fecha_inicio:
             logger.warning(f"Error de validación de fechas al actualizar reserva {reserva_id}: fin <= inicio.")
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="La fecha de fin de la reserva debe ser posterior a la fecha de inicio.")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="La fecha de fin de la reserva debe ser posterior a la fecha de inicio.")
 
         if "equipo_id" in update_data and update_data["equipo_id"] != db_obj.equipo_id:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No se puede cambiar el equipo de una reserva existente. Cancele y cree una nueva.")
@@ -161,6 +168,10 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
             db_obj.aprobado_por_id = current_user.id
             db_obj.fecha_aprobacion = datetime.now(timezone.utc)
 
+        if db_obj.estado == EstadoReservaEnum.EN_CURSO.value:
+            raise HTTPException(409, "Registre la devolución física antes de cerrar o cancelar la reserva.")
+        if nuevo_estado.value in {EstadoReservaEnum.EN_CURSO.value, EstadoReservaEnum.FINALIZADA.value}:
+            raise HTTPException(409, "Use la confirmación de entrega o devolución para cambiar a ese estado.")
         db_obj.estado = nuevo_estado.value
         if estado_in.notas_administrador is not None:
             db_obj.notas_administrador = estado_in.notas_administrador
@@ -169,47 +180,50 @@ class ReservaEquipoService(BaseService[ReservaEquipo, ReservaEquipoCreate, Reser
         logger.info(f"Estado de reserva ID {reserva_id} preparado para ser actualizado a '{nuevo_estado.value}'.")
         return db_obj
 
-    def check_in_out(
-        self,
-        db: Session,
-        *,
-        db_obj: ReservaEquipo,
-        check_data: ReservaEquipoCheckInOut,
-        current_user: Usuario
-    ) -> ReservaEquipo:
-        """
-        Registra el check-in (recogida) o check-out (devolución) de una reserva.
-        """
-        reserva_id = db_obj.id
-        
-        if check_data.check_in_time is not None:
-            logger.info(f"Usuario '{current_user.nombre_usuario}' realizando check-in para reserva ID {reserva_id}.")
-            if db_obj.estado != EstadoReservaEnum.CONFIRMADA.value:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Solo se puede hacer check-in de reservas en estado '{EstadoReservaEnum.CONFIRMADA.value}'. Estado actual: '{db_obj.estado}'.")
-            if db_obj.check_in_time is not None:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esta reserva ya tiene un check-in registrado.")
-            
-            db_obj.check_in_time = check_data.check_in_time
+    def check_in_out(self, db: Session, *, db_obj: ReservaEquipo, check_data: ReservaEquipoCheckInOut, current_user: Usuario) -> ReservaEquipo:
+        lock_topology(db)
+        db.execute(select(ReservaEquipo.id).where(ReservaEquipo.id == db_obj.id).with_for_update())
+        db.refresh(db_obj)
+        equipo = db.scalar(select(Equipo).where(Equipo.id == db_obj.equipo_id).with_for_update(of=Equipo))
+        now = datetime.now(timezone.utc)
+        if check_data.check_out_time:
+            if db_obj.estado != EstadoReservaEnum.CONFIRMADA.value or db_obj.check_out_time:
+                raise HTTPException(409, "Solo se puede entregar una reserva confirmada que no se haya entregado.")
+            if equipo.estado.codigo != EquipmentStateCode.AVAILABLE:
+                raise HTTPException(409, "El equipo ya no está disponible para la entrega.")
+            if db.scalar(select(Movimiento.id).where(Movimiento.equipo_id == equipo.id, Movimiento.estado.in_(["Pendiente","Autorizado","En Proceso"])).limit(1)):
+                raise HTTPException(409, "El equipo tiene un movimiento pendiente.")
+            if db.scalar(select(ReservaEquipo.id).where(ReservaEquipo.equipo_id == equipo.id, ReservaEquipo.estado == EstadoReservaEnum.EN_CURSO.value).limit(1)):
+                raise HTTPException(409, "El equipo tiene otra reserva sin devolver.")
+            members = physical_group(db, equipo.id)
+            ensure_free(db, members)
+            db_obj.componentes_origen = snapshot(members, equipo.id)
+            state = db.scalar(select(EstadoEquipo).where(EstadoEquipo.codigo == EquipmentStateCode.ON_LOAN))
+            if not state: raise HTTPException(409, "Falta el estado Prestado en el catálogo.")
+            equipo.estado_id = state.id
+            equipo.empleado_asignado_id = db_obj.solicitante.empleado_id
+            db_obj.check_out_time = now
             db_obj.estado = EstadoReservaEnum.EN_CURSO.value
-
-        elif check_data.check_out_time is not None:
-            logger.info(f"Usuario '{current_user.nombre_usuario}' realizando check-out para reserva ID {reserva_id}.")
-            if db_obj.estado != EstadoReservaEnum.EN_CURSO.value:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Solo se puede hacer check-out de reservas en estado '{EstadoReservaEnum.EN_CURSO.value}'. Estado actual: '{db_obj.estado}'.")
-            if db_obj.check_out_time is not None:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Esta reserva ya tiene un check-out registrado.")
-
-            db_obj.check_out_time = check_data.check_out_time
+        elif check_data.check_in_time:
+            if db_obj.estado != EstadoReservaEnum.EN_CURSO.value or not db_obj.check_out_time or db_obj.check_in_time:
+                raise HTTPException(409, "Solo se puede devolver una reserva que está en curso.")
+            state = db.scalar(select(EstadoEquipo).where(EstadoEquipo.codigo == EquipmentStateCode.AVAILABLE))
+            if not state: raise HTTPException(409, "Falta el estado Disponible en el catálogo.")
+            equipo.estado_id = state.id
+            equipo.empleado_asignado_id = None
+            db_obj.check_in_time = now
             db_obj.estado = EstadoReservaEnum.FINALIZADA.value
-            if check_data.notas_devolucion is not None:
-                db_obj.notas_devolucion = check_data.notas_devolucion
-        else:
-            logger.warning(f"Intento de check-in/out para reserva ID {reserva_id} sin especificar tiempo de check-in o check-out.")
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Debe proporcionar check_in_time o check_out_time.")
-
+            db_obj.notas_devolucion = check_data.notas_devolucion
+        else: raise HTTPException(422, "Indique entrega o devolución.")
+        propagate(db, equipo, db_obj.componentes_origen)
         db.add(db_obj)
-        logger.info(f"Reserva ID {reserva_id} preparada para { 'check-in' if check_data.check_in_time else 'check-out'} (nuevo estado: '{db_obj.estado}').")
         return db_obj
+
+    def remove(self, db: Session, *, id):
+        reservation = self.get_or_404(db, id=id)
+        if reservation.check_out_time or reservation.check_in_time:
+            raise HTTPException(409, "Las reservas con entregas o devoluciones se conservan como historial de custodia.")
+        return super().remove(db, id=id)
 
     def get_multi_by_equipo_and_range(
         self, db: Session, *, equipo_id: UUID, start_time: datetime, end_time: datetime

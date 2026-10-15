@@ -42,6 +42,8 @@ class InventarioMovimiento(Base):
     costo_unitario: Mapped[Optional[Decimal]] = mapped_column(Numeric(12, 4), nullable=True)
     motivo_ajuste: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     referencia_externa: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    procedencia: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
+    entregado_por: Mapped[Optional[str]] = mapped_column(String(150), nullable=True)
     referencia_transferencia: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True, index=True)
     notas: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 

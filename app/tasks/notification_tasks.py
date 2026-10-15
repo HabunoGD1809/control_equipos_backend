@@ -1,7 +1,7 @@
 import logging
 from typing import Dict, Any
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, text
 
 from app.worker import celery_app
 from app.db.session import SessionLocal
@@ -9,6 +9,11 @@ from app.models.notificacion import Notificacion
 from app.models.movimiento import Movimiento
 from app.models.usuario import Usuario
 from app.models.rol import Rol
+from app.core.config import settings
+from app.core.permissions import ADMIN_ROLE_NAME
+from email.message import EmailMessage
+import smtplib
+import ssl
 
 logger = logging.getLogger(__name__)
 
@@ -17,18 +22,19 @@ def task_send_email_notification(recipient_email: str, subject: str, content: st
     """
     Tarea Celery para enviar una notificación por correo electrónico.
     """
-    logger.info(f"Iniciando tarea: Enviar email a {recipient_email}, Asunto: {subject}")
-    try:
-        print(f"--- SIMULACIÓN EMAIL ---")
-        print(f"Para: {recipient_email}")
-        print(f"Asunto: {subject}")
-        print(f"Contenido: {content}")
-        print(f"--- FIN SIMULACIÓN ---")
-        logger.info(f"Tarea completada: Email (simulado) enviado a {recipient_email}.")
-        return f"Email enviado a {recipient_email}"
-    except Exception as e:
-        logger.error(f"Error en tarea send_email_notification para {recipient_email}: {e}", exc_info=True)
-        return f"Error al enviar email: {e}"
+    if not settings.SMTP_HOST or not settings.SMTP_FROM:
+        raise RuntimeError("Configure SMTP_HOST y SMTP_FROM para enviar correo.")
+    message = EmailMessage()
+    message["From"], message["To"], message["Subject"] = str(settings.SMTP_FROM), recipient_email, subject
+    message.set_content(content)
+    with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as smtp:
+        if settings.SMTP_STARTTLS:
+            smtp.starttls(context=ssl.create_default_context())
+        if settings.SMTP_USERNAME:
+            smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD or "")
+        smtp.send_message(message)
+    logger.info("Notificación enviada por SMTP.")
+    return "Correo enviado."
 
 
 # --- PREVENCIÓN DE DESASTRES (ALERTAS AUTOMÁTICAS) ---
@@ -43,6 +49,8 @@ def task_check_overdue_loans() -> str:
     db = SessionLocal()
     
     try:
+        if not db.execute(text("SELECT pg_try_advisory_xact_lock(hashtext('control_equipos.overdue_loans'))")).scalar_one():
+            return "Otra revisión de préstamos está en curso."
         ahora = datetime.now(timezone.utc)
         
         # 1. Buscar préstamos vencidos (En Uso / Pendiente y fecha pasada)
@@ -62,7 +70,7 @@ def task_check_overdue_loans() -> str:
 
         # 2. Buscar a los administradores a quienes notificar
         admins = db.execute(
-            select(Usuario).join(Rol).where(Rol.nombre == 'admin')
+            select(Usuario).join(Rol).where(Rol.nombre == ADMIN_ROLE_NAME, Usuario.bloqueado.is_(False))
         ).scalars().all()
         
         # 3. Generar notificaciones
@@ -72,7 +80,7 @@ def task_check_overdue_loans() -> str:
                 continue
 
             dias_retraso = (ahora - mov.fecha_prevista_retorno).days
-            mensaje = f"ALERTA: El equipo '{mov.equipo.nombre}' prestado a '{mov.destino}' tiene {dias_retraso} días de retraso."
+            mensaje = f"ALERTA: El equipo '{mov.equipo.nombre}' prestado a '{mov.ubicacion_destino.nombre if mov.ubicacion_destino else 'Sin ubicación'}' tiene {dias_retraso} días de retraso."
             
             for admin in admins:
                 # Verificamos si ya le enviamos esta alerta recientemente para no spammear
@@ -81,10 +89,13 @@ def task_check_overdue_loans() -> str:
                         and_(
                             Notificacion.usuario_id == admin.id,
                             Notificacion.referencia_id == mov.id,
+                            Notificacion.referencia_tabla == "movimientos",
+                            Notificacion.tipo == "alerta",
+                            Notificacion.urgencia == 2,
                             Notificacion.created_at > (ahora - timedelta(days=1))
                         )
                     )
-                ).scalar_one_or_none()
+                ).scalars().first()
                 
                 if not ya_notificado:
                     notif = Notificacion(
@@ -104,6 +115,6 @@ def task_check_overdue_loans() -> str:
     except Exception as e:
         db.rollback()
         logger.error(f"Error en tarea check_overdue_loans: {e}", exc_info=True)
-        return f"Error: {e}"
+        raise
     finally:
         db.close()

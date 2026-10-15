@@ -118,10 +118,10 @@ async def test_full_reserva_lifecycle_and_edge_cases(
     assert reserva["estado"] == EstadoReservaEnum.PENDIENTE_APROBACION.value
 
     # 2. Fallo al intentar hacer check-in si no está aprobada
-    checkin_data = {"check_in_time": datetime.now(timezone.utc).isoformat()}
+    checkin_data = {"check_out_time": datetime.now(timezone.utc).isoformat()}
     response_fail_checkin = await client.patch(f"{settings.API_V1_STR}/reservas/{reserva_id}/check-in-out", headers=headers_supervisor, json=checkin_data)
     assert response_fail_checkin.status_code == status.HTTP_409_CONFLICT
-    assert "solo se puede hacer check-in de reservas en estado 'confirmada'" in response_fail_checkin.json()["detail"].lower()
+    assert "solo se puede entregar una reserva confirmada" in response_fail_checkin.json()["detail"].lower()
 
     # 3. Aprobación por un supervisor
     estado_data_aprobar = {"estado": EstadoReservaEnum.CONFIRMADA.value, "notas_administrador": "Aprobado para la prueba"}
@@ -131,29 +131,29 @@ async def test_full_reserva_lifecycle_and_edge_cases(
 
     # 4. Éxito al hacer check-in
     checkin_time = datetime.now(timezone.utc)
-    checkin_data = {"check_in_time": checkin_time.isoformat()}
+    checkin_data = {"check_out_time": checkin_time.isoformat()}
     response_checkin = await client.patch(f"{settings.API_V1_STR}/reservas/{reserva_id}/check-in-out", headers=headers_supervisor, json=checkin_data)
     assert response_checkin.status_code == status.HTTP_200_OK
     assert response_checkin.json()["estado"] == EstadoReservaEnum.EN_CURSO.value
-    assert response_checkin.json()["check_in_time"] is not None
+    assert response_checkin.json()["check_out_time"] is not None
 
     # 5. Fallo al intentar hacer check-in de nuevo
     response_checkin_again = await client.patch(f"{settings.API_V1_STR}/reservas/{reserva_id}/check-in-out", headers=headers_supervisor, json=checkin_data)
     assert response_checkin_again.status_code == status.HTTP_409_CONFLICT
     
     # 6. Fallo al intentar hacer check-out con un check-in en el JSON (simulando un error de cliente)
-    bad_checkout_data = {"check_in_time": checkin_time.isoformat(), "check_out_time": datetime.now(timezone.utc).isoformat()}
+    bad_checkout_data = {"check_out_time": checkin_time.isoformat(), "check_in_time": datetime.now(timezone.utc).isoformat()}
     response_fail_checkout = await client.patch(f"{settings.API_V1_STR}/reservas/{reserva_id}/check-in-out", headers=headers_supervisor, json=bad_checkout_data)
-    assert response_fail_checkout.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
+    assert response_fail_checkout.status_code == status.HTTP_422_UNPROCESSABLE_CONTENT
 
     # 7. Éxito al hacer check-out
     checkout_time = datetime.now(timezone.utc)
-    checkout_data = {"check_out_time": checkout_time.isoformat(), "notas_devolucion": "Equipo devuelto OK."}
+    checkout_data = {"check_in_time": checkout_time.isoformat(), "notas_devolucion": "Equipo devuelto OK."}
     response_checkout = await client.patch(f"{settings.API_V1_STR}/reservas/{reserva_id}/check-in-out", headers=headers_supervisor, json=checkout_data)
     assert response_checkout.status_code == status.HTTP_200_OK
     checked_out_reserva = response_checkout.json()
     assert checked_out_reserva["estado"] == EstadoReservaEnum.FINALIZADA.value
-    assert checked_out_reserva["check_out_time"] is not None
+    assert checked_out_reserva["check_in_time"] is not None
     assert checked_out_reserva["notas_devolucion"] == "Equipo devuelto OK."
 
 
@@ -246,13 +246,13 @@ async def test_approve_checkin_checkout_flow(
     assert response_approve.json()["estado"] == EstadoReservaEnum.CONFIRMADA.value
 
     # 3. Supervisor realiza el Check-in
-    checkin_data = {"check_in_time": datetime.now(timezone.utc).isoformat()}
+    checkin_data = {"check_out_time": datetime.now(timezone.utc).isoformat()}
     response_checkin = await client.patch(f"{settings.API_V1_STR}/reservas/{reserva_id}/check-in-out", headers=headers_supervisor, json=checkin_data)
     assert response_checkin.status_code == status.HTTP_200_OK
     assert response_checkin.json()["estado"] == EstadoReservaEnum.EN_CURSO.value
 
     # 4. Supervisor realiza el Check-out
-    checkout_data = {"check_out_time": datetime.now(timezone.utc).isoformat()}
+    checkout_data = {"check_in_time": datetime.now(timezone.utc).isoformat()}
     response_checkout = await client.patch(f"{settings.API_V1_STR}/reservas/{reserva_id}/check-in-out", headers=headers_supervisor, json=checkout_data)
     assert response_checkout.status_code == status.HTTP_200_OK
     assert response_checkout.json()["estado"] == EstadoReservaEnum.FINALIZADA.value

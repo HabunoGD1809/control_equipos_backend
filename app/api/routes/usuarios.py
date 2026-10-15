@@ -1,9 +1,12 @@
 import logging
-import time
+import re
+from pathlib import Path
 from typing import Any, List
-from uuid import UUID as PyUUID
+from uuid import UUID as PyUUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
+from fastapi.responses import FileResponse, Response
+from app.core.config import settings
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
@@ -12,10 +15,24 @@ from app.schemas import Usuario, UsuarioCreate, UsuarioUpdate, Msg
 from app.services.usuario import usuario_service
 from app.models import Usuario as UsuarioModel
 from app.core import permissions as perms
-from app.core.storage import upload_avatar
+from app.core.storage import upload_avatar, read_cloud_avatar
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+@router.get('/avatar/{filename}', summary='Consultar una foto de perfil con sesión activa')
+def read_avatar(filename: str, current_user: UsuarioModel = Depends(deps.get_current_active_user)):
+    if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{1,120}\.(?:png|jpe?g|webp)', filename, re.IGNORECASE):
+        raise HTTPException(404, 'Imagen no encontrada.')
+    content = read_cloud_avatar(filename)
+    if content is not None:
+        from mimetypes import guess_type
+        return Response(content, media_type=guess_type(filename)[0] or 'image/jpeg', headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
+    directory = (Path(settings.UPLOADS_DIRECTORY) / 'avatars').resolve()
+    target = (directory / filename).resolve()
+    if target.parent != directory or not target.is_file():
+        raise HTTPException(404, 'Imagen no encontrada.')
+    return FileResponse(target, headers={'Cache-Control': 'private, no-store', 'X-Content-Type-Options': 'nosniff'})
 
 @router.post(
     "/",
@@ -97,7 +114,7 @@ def update_usuario_me(
     
     update_data = user_in.model_dump(exclude_unset=True)
     
-    restricted_fields = ["rol_id", "bloqueado", "nombre_usuario"]
+    restricted_fields = set(update_data) - {"email"}
     for field in restricted_fields:
         if field in update_data:
             logger.warning(f"Usuario '{current_user.nombre_usuario}' intentó modificar campo restringido '{field}' en /me. Será ignorado.")
@@ -152,8 +169,7 @@ async def update_avatar_me(
         base_url = await upload_avatar(file, str(current_user.id))
 
         # 3. Burlar la caché del navegador/App
-        timestamp = int(time.time())
-        url_with_cache_buster = f"{base_url}?v={timestamp}"
+        url_with_cache_buster = f"{base_url}?v={uuid4().hex}"
         
         # 4. Actualizar usuario en DB
         update_data = {"avatar_url": url_with_cache_buster}
@@ -163,9 +179,14 @@ async def update_avatar_me(
         db.refresh(updated_user)
         return updated_user
         
+    except HTTPException:
+        db.rollback()
+        raise
     except ValueError as ve:
+        db.rollback()
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
+        db.rollback()
         logger.error(f"Error subiendo avatar: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Ocurrió un error al procesar la imagen.")
 
@@ -236,9 +257,9 @@ def update_usuario(
 
     if user_to_update.id == current_user.id:
         update_data = user_in.model_dump(exclude_unset=True)
-        if "rol_id" in update_data or "bloqueado" in update_data:
+        if set(update_data) - {"email"}:
             logger.warning(f"Admin '{current_user.nombre_usuario}' intentó auto-modificar rol/bloqueo por vía general. Denegado.")
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un administrador no puede cambiar su propio rol o estado de bloqueo por esta vía.")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Un administrador no puede cambiar su propio rol o estado de bloqueo por esta vía, ni administrar su propio acceso. Para cambiar tu contraseña utiliza tu perfil.")
 
     try:
         updated_user = usuario_service.update(db=db, db_obj=user_to_update, obj_in=user_in)

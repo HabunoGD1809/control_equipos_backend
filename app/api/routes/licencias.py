@@ -4,6 +4,7 @@ from uuid import UUID as PyUUID
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from app.api import deps
@@ -11,6 +12,7 @@ from app.schemas.software_catalogo import SoftwareCatalogo, SoftwareCatalogoCrea
 from app.schemas.licencia_software import LicenciaSoftware, LicenciaSoftwareCreate, LicenciaSoftwareUpdate 
 from app.schemas.asignacion_licencia import AsignacionLicencia, AsignacionLicenciaCreate, AsignacionLicenciaUpdate
 from app.schemas.common import Msg
+from app.schemas.usuario import UsuarioIdentidad
 from app.services.software_catalogo import software_catalogo_service
 from app.services.licencia_software import licencia_software_service
 from app.services.asignacion_licencia import asignacion_licencia_service
@@ -22,13 +24,19 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(redirect_slashes=False)
 
+def license_for_reader(license, user):
+    from app.core.security import user_has_permissions
+    if user_has_permissions(user, {perms.PERM_ADMINISTRAR_LICENCIAS}):
+        return license
+    return LicenciaSoftware.model_validate(license).model_copy(update={'clave_producto': None})
+
 # ==============================================================================
 # Endpoints para SOFTWARE CATALOGO
 # ==============================================================================
 @router.post("/catalogo",
              response_model=SoftwareCatalogo,
              status_code=status.HTTP_201_CREATED,
-             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
+             dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_SOFTWARE_CATALOGO]))],
              summary="Crear entrada en Catálogo de Software",
             #  tags=["licencias", "catalogo"]
              )
@@ -94,7 +102,7 @@ def read_software_catalogo_by_id(
 
 @router.put("/catalogo/{catalogo_id}",
             response_model=SoftwareCatalogo,
-            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_SOFTWARE_CATALOGO]))],
             summary="Actualizar entrada de Catálogo",
             # tags=["licencias", "catalogo"]
             )
@@ -131,7 +139,7 @@ def update_software_catalogo_entry(
 
 @router.delete("/catalogo/{catalogo_id}",
                response_model=Msg,
-               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_CATALOGOS]))],
+               dependencies=[Depends(deps.PermissionChecker([perms.PERM_ADMINISTRAR_SOFTWARE_CATALOGO]))],
                status_code=status.HTTP_200_OK,
                summary="Eliminar entrada de Catálogo",
             #    tags=["licencias", "catalogo"]
@@ -189,7 +197,7 @@ def create_licencia(
         db.commit()
         db.refresh(licencia)
         sw_nombre = licencia.software_info.nombre if licencia.software_info else "N/A"
-        logger.info(f"Licencia para '{sw_nombre}' (Clave: {licencia.clave_producto}, ID: {licencia.id}) creada exitosamente.")
+        logger.info(f"Licencia para '{sw_nombre}' (ID: {licencia.id}) creada exitosamente.")
         return licencia
     except HTTPException as http_exc:
         logger.warning(f"Error HTTP al registrar licencia: {http_exc.detail}")
@@ -228,7 +236,7 @@ def read_licencias(
         licencias = licencia_software_service.get_multi_by_software(db, software_catalogo_id=software_catalogo_id, skip=skip, limit=limit)
     else:
         licencias = licencia_software_service.get_multi(db, skip=skip, limit=limit)
-    return licencias
+    return [license_for_reader(license, current_user) for license in licencias]
 
 # ==============================================================================
 # Endpoints para ASIGNACIONES DE LICENCIAS
@@ -386,6 +394,14 @@ def delete_asignacion(
 # ==============================================================================
 # Endpoints dinámicos /{licencia_id}
 # ==============================================================================
+@router.get("/destinatarios", response_model=List[UsuarioIdentidad],
+            dependencies=[Depends(deps.PermissionChecker([perms.PERM_ASIGNAR_LICENCIAS]))])
+def read_license_recipients(db: Session = Depends(deps.get_db), skip: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=200)):
+    """Minimal active identities for assigning licenses; does not grant user administration."""
+    return list(db.execute(select(UsuarioModel.id, UsuarioModel.nombre_usuario)
+        .where(UsuarioModel.bloqueado.is_(False)).order_by(UsuarioModel.nombre_usuario).offset(skip).limit(limit)))
+
+
 @router.get("/{licencia_id}",
             response_model=LicenciaSoftware,
             dependencies=[Depends(deps.PermissionChecker([perms.PERM_VER_LICENCIAS]))],
@@ -398,7 +414,7 @@ def read_licencia_by_id(
 ) -> Any:
     """Obtiene la información detallada de una licencia específica."""
     logger.info(f"Usuario '{current_user.nombre_usuario}' solicitando licencia ID: {licencia_id}.")
-    return licencia_software_service.get_or_404(db, id=licencia_id)
+    return license_for_reader(licencia_software_service.get_or_404(db, id=licencia_id), current_user)
 
 @router.put("/{licencia_id}",
             response_model=LicenciaSoftware,

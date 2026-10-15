@@ -29,7 +29,7 @@ def read_audit_logs(
     limit: int = Query(100, ge=1, le=500),
     table_name: Optional[str] = Query(None, description="Filtrar por nombre de tabla afectada (case-insensitive)"),
     operation: Optional[str] = Query(None, description="Filtrar por tipo de operación (INSERT, UPDATE, DELETE)"),
-    username: Optional[str] = Query(None, description="Filtrar por usuario de base de datos (case-insensitive)"),
+    username: Optional[str] = Query(None, description="Filtrar por usuario de la aplicación o de la base de datos"),
     app_user_id: Optional[PyUUID] = Query(None, description="Filtrar por ID de usuario de la aplicación"),
     record_pk_value: Optional[str] = Query(None, description="Filtrar por valor de la clave primaria del registro afectado (búsqueda textual en JSON)"),
     start_time: Optional[datetime] = Query(None, description="Fecha/hora mínima del registro (formato ISO)"),
@@ -48,7 +48,7 @@ def read_audit_logs(
     if start_time and end_time and end_time <= start_time:
         logger.warning("Consulta de auditoría rechazada: fecha_fin debe ser posterior a fecha_inicio.")
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="La fecha de fin debe ser posterior a la fecha de inicio para el filtro."
         )
 

@@ -16,6 +16,7 @@ class AuditLogBase(BaseModel):
     old_data: Optional[Dict[str, Any]] = Field(None, description="Valores del registro antes del cambio (para UPDATE y DELETE)")
     new_data: Optional[Dict[str, Any]] = Field(None, description="Valores del registro después del cambio (para INSERT y UPDATE)")
     username: Optional[str] = Field(None, description="Usuario de la base de datos que ejecutó la acción")
+    app_username: Optional[str] = None
     app_user_id: Optional[uuid.UUID] = Field(None, description="ID del usuario de la aplicación que inició la acción (si se pudo registrar)")
 
 # ===============================================================

@@ -1,26 +1,31 @@
-﻿$ErrorActionPreference = "Stop"
-$EnvDir = ".CtrlEqEnv"
-
-Write-Host ">> Iniciando configuracion con uv..." -ForegroundColor Cyan
-
-if (!(Get-Command "uv" -ErrorAction SilentlyContinue)) {
-    Write-Host "ERROR: 'uv' no esta instalado." -ForegroundColor Red
-    Write-Host "Para instalarlo ejecuta:" -ForegroundColor Yellow
-    Write-Host "  powershell -ExecutionPolicy ByPass -c `"irm https://astral.sh/uv/install.ps1 | iex`"" -ForegroundColor White
-    exit 1
-}
-
-$env:UV_PROJECT_ENVIRONMENT = $EnvDir
-
-Write-Host ">> Sincronizando dependencias..." -ForegroundColor Cyan
-
+﻿param(
+    [int]$Port = 8086,
+    [string]$BindAddress = "127.0.0.1",
+    [string]$DatabaseHost = "127.0.0.1",
+    [int]$DatabasePort = 5433,
+    [switch]$Development,
+    [switch]$SkipInstall
+)
+$ErrorActionPreference = "Stop"
+$projectRoot = Split-Path -Parent $PSScriptRoot
+Push-Location $projectRoot
 try {
-    uv sync --all-extras
-    Write-Host "`n[OK] Entorno virtual sincronizado y listo." -ForegroundColor Green
-    Write-Host "Para activar el entorno ejecuta:" -ForegroundColor Yellow
-    Write-Host "  .\$EnvDir\Scripts\Activate.ps1" -ForegroundColor White
-}
-catch {
-    Write-Host "`n[ERROR] Fallo durante la sincronizacion de uv." -ForegroundColor Red
-    exit 1
-}
+    if (!(Get-Command uv -ErrorAction SilentlyContinue)) { throw "Instale uv: https://docs.astral.sh/uv/getting-started/installation/" }
+    if (!(Test-Path -LiteralPath '.env')) { throw "Copie .env.example a .env y configure sus claves, base de datos y administrador." }
+    $env:POSTGRES_SERVER = $DatabaseHost
+    $env:POSTGRES_PORT = [string]$DatabasePort
+    $env:REPORT_EXECUTION_MODE = "background"
+    $env:PORT = [string]$Port
+    if (!$SkipInstall) {
+        if ($Development) { uv sync --frozen --all-extras } else { uv sync --frozen --no-dev }
+        if ($LASTEXITCODE -ne 0) { throw "No se pudieron instalar las dependencias." }
+    }
+    uv run --frozen --no-sync alembic upgrade head
+    if ($LASTEXITCODE -ne 0) { throw "No se pudieron aplicar las migraciones." }
+    uv run --frozen --no-sync python scripts/bootstrap.py --from-env
+    if ($LASTEXITCODE -ne 0) { throw "No se pudo preparar el administrador." }
+    Write-Host "API: http://${BindAddress}:${Port} | Documentación: http://${BindAddress}:${Port}/api/v1/docs"
+    if ($Development) { uv run --frozen --no-sync uvicorn app.main:app --host $BindAddress --port $Port --reload }
+    else { uv run --frozen --no-sync uvicorn app.main:app --host $BindAddress --port $Port }
+    if ($LASTEXITCODE -ne 0) { throw "La API se detuvo con un error." }
+} finally { Pop-Location }

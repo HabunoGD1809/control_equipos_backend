@@ -9,12 +9,14 @@ from app.services.base_service import BaseService
 class EmpleadoService(BaseService[Empleado, EmpleadoCreate, EmpleadoUpdate]):
     def search(self, db: Session, *, query: str, limit: int = 50) -> List[Empleado]:
         """Búsqueda rápida por nombre o email."""
+        pattern = '%' + query.strip().replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
         return (
             db.query(self.model)
             .filter(
+                self.model.is_active.is_(True),
                 or_(
-                    self.model.nombre_completo.ilike(f"%{query}%"),
-                    self.model.email_corporativo.ilike(f"%{query}%")
+                    self.model.nombre_completo.ilike(pattern),
+                    self.model.email_corporativo.ilike(pattern)
                 )
             )
             .limit(limit)

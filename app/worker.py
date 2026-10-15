@@ -25,9 +25,18 @@ celery_app.conf.update(
     result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
+    worker_prefetch_multiplier=1,
+    worker_max_tasks_per_child=50,
+    broker_connection_retry_on_startup=True,
+    broker_connection_timeout=3,
+    broker_transport_options={"socket_connect_timeout": 3, "socket_timeout": 5},
 )
 
 celery_app.conf.beat_schedule = {
+    'recover-reports': {'task': 'tasks.recover_reports', 'schedule': 60.0},
+    'check-overdue-loans-hourly': {'task': 'tasks.check_overdue_loans', 'schedule': crontab(minute=10)},
     'manage-audit-partitions-daily': {
         'task': 'tasks.manage_audit_log_partitions',
         'schedule': crontab(hour=2, minute=0),
@@ -38,4 +47,4 @@ celery_app.conf.beat_schedule = {
     }
 }
 
-logger.info(f"Celery configurado exitosamente. Broker: {settings.CELERY_BROKER_URL}")
+logger.info("Celery configurado exitosamente.")

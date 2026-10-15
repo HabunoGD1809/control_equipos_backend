@@ -25,7 +25,7 @@ def task_refresh_materialized_views() -> str:
         db.rollback()
         logger.error(f"Error en tarea refresh_materialized_views: {e}", exc_info=True)
         # self.retry(exc=e, countdown=60) # Descomentar si le pasamos bind=True al shared_task
-        return f"Error al refrescar vistas: {e}"
+        raise
     finally:
         db.close()
         
@@ -46,6 +46,11 @@ def task_manage_audit_log_partitions() -> str:
     except Exception as e:
         db.rollback()
         logger.error(f"Error en tarea manage_audit_log_partitions: {e}", exc_info=True)
-        return f"Error al gestionar particiones de auditoría: {e}"
+        raise
     finally:
         db.close()
+
+@shared_task(name="tasks.recover_reports")
+def task_recover_reports():
+    from app.core.maintenance import maintain_reports
+    maintain_reports()

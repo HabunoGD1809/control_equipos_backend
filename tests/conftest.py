@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone, date
 from decimal import Decimal
 import json
 import logging
+import secrets
 
 import httpx
 from fastapi import FastAPI
@@ -15,7 +16,7 @@ from sqlalchemy import create_engine, text, select, delete
 from sqlalchemy.orm import sessionmaker, Session, selectinload, joinedload
 
 from app.models import ( # noqa
-    Usuario, Rol, Permiso, EstadoEquipo, Proveedor, TipoDocumento,
+    Usuario, Rol, Permiso, EstadoEquipo, Proveedor, TipoDocumento, Marca, Ubicacion,
     TipoMantenimiento, Equipo, ReservaEquipo, Notificacion,
     TipoItemInventario, InventarioStock, InventarioMovimiento,
     SoftwareCatalogo, LicenciaSoftware, AsignacionLicencia,
@@ -44,9 +45,12 @@ logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG) # DEBUG
 
 TEST_SQLALCHEMY_DATABASE_URL = str(settings.DATABASE_URI)
-logger.info(f"Usando URL de BD para tests: {TEST_SQLALCHEMY_DATABASE_URL}")
+from sqlalchemy.engine import make_url
+if "test" not in (make_url(TEST_SQLALCHEMY_DATABASE_URL).database or "").lower():
+    raise RuntimeError("Las pruebas requieren una base separada cuyo nombre contenga 'test'.")
+logger.info("Usando una base aislada para las pruebas.")
 engine = create_engine(TEST_SQLALCHEMY_DATABASE_URL, echo=False, pool_pre_ping=True)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine, join_transaction_mode="create_savepoint")
 
 @pytest.fixture(scope="session")
 def app() -> FastAPI:
@@ -114,19 +118,19 @@ async def get_auth_token(client: AsyncClient, username: str, password: str) -> s
     """Función helper para obtener un token de autenticación."""
     login_data = {"username": username, "password": password}
     url = f"{settings.API_V1_STR}/auth/login/access-token"
-    logger.info(f"Solicitando token para usuario '{username}' en {url}")
+    # Token values are intentionally not logged.
     try:
         with mock.patch("app.api.routes.auth.log_login_attempt_task"):
             response = await client.post(url, data=login_data)
-        logger.debug(f"Respuesta de login para '{username}': Status {response.status_code}, Body: {response.text[:100]}...") # Log limitado
+    # Token values are intentionally not logged.
         response.raise_for_status()
         token_data = response.json()
         access_token = token_data.get("access_token")
         if access_token:
-            logger.info(f"Token obtenido exitosamente para '{username}'.")
+    # Token values are intentionally not logged.
             return access_token
         else:
-            logger.error(f"No se encontró 'access_token' en la respuesta para '{username}'. Respuesta: {token_data}")
+    # Token values are intentionally not logged.
             return None
     except httpx.HTTPStatusError as e:
         status_code = e.response.status_code
@@ -134,19 +138,19 @@ async def get_auth_token(client: AsyncClient, username: str, password: str) -> s
             error_detail = e.response.json()
         except json.JSONDecodeError:
             error_detail = e.response.text
-        logger.error(f"FALLO al obtener token para '{username}' en get_auth_token: Status={status_code}, Error={type(e).__name__}. Detail: {error_detail}", exc_info=False)
+    # Token values are intentionally not logged.
         return None
     except Exception as e:
-        logger.error(f"FALLO INESPERADO al obtener token para '{username}': Error={type(e).__name__}. Detail: {e}", exc_info=True)
+    # Token values are intentionally not logged.
         return None
 
 try:
-    TEST_USER_REGULAR_PASSWORD = settings.TEST_USER_REGULAR_PASSWORD
-    TEST_ADMIN_PASSWORD = settings.TEST_ADMIN_PASSWORD
-    TEST_SUPERVISOR_PASSWORD = settings.TEST_SUPERVISOR_PASSWORD
-    TEST_TECNICO_PASSWORD = settings.TEST_TECNICO_PASSWORD
-    TEST_AUDITOR_PASSWORD = settings.TEST_AUDITOR_PASSWORD
-    TEST_TESTER_PASSWORD = settings.TEST_TESTER_PASSWORD
+    TEST_USER_REGULAR_PASSWORD = settings.TEST_USER_REGULAR_PASSWORD or secrets.token_urlsafe(24)
+    TEST_ADMIN_PASSWORD = settings.TEST_ADMIN_PASSWORD or secrets.token_urlsafe(24)
+    TEST_SUPERVISOR_PASSWORD = settings.TEST_SUPERVISOR_PASSWORD or secrets.token_urlsafe(24)
+    TEST_TECNICO_PASSWORD = settings.TEST_TECNICO_PASSWORD or secrets.token_urlsafe(24)
+    TEST_AUDITOR_PASSWORD = settings.TEST_AUDITOR_PASSWORD or secrets.token_urlsafe(24)
+    TEST_TESTER_PASSWORD = settings.TEST_TESTER_PASSWORD or secrets.token_urlsafe(24)
 except AttributeError as e:
     pytest.fail(
         f"Falta una contraseña de prueba requerida en tu archivo .env. "
@@ -546,6 +550,14 @@ def generate_test_serie(prefix: str = "TEST") -> str:
     part3 = uuid4().hex[:4].upper()
     return f"{part1}-{part2}-{part3}"
 
+def catalog_id(db: Session, model, name: str):
+    record = db.scalar(select(model).where(model.nombre == name))
+    if not record:
+        record = model(nombre=name)
+        db.add(record); db.flush()
+    return record.id
+
+
 @pytest.fixture(scope="function")
 def test_equipo_reservable(db: Session, test_estado_disponible: EstadoEquipo, test_proveedor: Proveedor) -> Equipo:
     logger.debug("Inicio fixture: test_equipo_reservable")
@@ -554,7 +566,7 @@ def test_equipo_reservable(db: Session, test_estado_disponible: EstadoEquipo, te
     equipo = db.query(Equipo).filter(Equipo.numero_serie == serie).first()
     if not equipo:
         equipo = Equipo(nombre=nombre_equipo, numero_serie=serie, estado_id=test_estado_disponible.id,
-                        marca="Epson Test", modelo="XYZ-100", proveedor_id=test_proveedor.id,
+                        marca_id=catalog_id(db, Marca, "Epson Test"), modelo="XYZ-100", proveedor_id=test_proveedor.id,
                         fecha_adquisicion=date.today() - timedelta(days=30), valor_adquisicion=Decimal("450.99")) # type: ignore
         db.add(equipo)
     else:
@@ -580,7 +592,7 @@ def test_componente_ram(db: Session, test_estado_disponible: EstadoEquipo) -> Eq
     if not equipo_ram_obj:
         equipo_ram_obj = Equipo(
             nombre=f"Modulo RAM Test {serie_ram}", numero_serie=serie_ram,
-            estado_id=test_estado_disponible.id, marca="Kingston", modelo="DDR4-SODIMM-8GB" # type: ignore
+            estado_id=test_estado_disponible.id, marca_id=catalog_id(db, Marca, "Kingston"), modelo="DDR4-SODIMM-8GB" # type: ignore
         )
         db.add(equipo_ram_obj); db.flush(); db.refresh(equipo_ram_obj)
     return equipo_ram_obj
@@ -605,7 +617,7 @@ def test_documento_pendiente(db: Session, test_equipo_reservable: Equipo, test_t
     if not doc:
         doc = Documentacion(
             equipo_id=test_equipo_reservable.id, tipo_documento_id=test_tipo_doc_factura.id, # type: ignore
-            titulo=titulo_doc, enlace=f"/uploads/fake_test_docs/{uuid4().hex[:8]}.pdf",
+            titulo=titulo_doc, enlace=f"{uuid4()}.pdf",
             nombre_archivo=f"fact_test_{uuid4().hex[:4]}.pdf", mime_type="application/pdf", tamano_bytes=102400,
             subido_por=test_usuario_regular_fixture.id, estado=EstadoDocumentoEnum.PENDIENTE.value # type: ignore
         )
@@ -671,45 +683,12 @@ def tipo_item_toner(db: Session) -> TipoItemInventario:
 # tests/conftest.py
 
 @pytest.fixture(scope="function")
-async def stock_inicial_toner(db: Session, tipo_item_toner: TipoItemInventario) -> InventarioStock:
-    """
-    Asegura que haya un registro de stock inicial predecible para un item
-    en una ubicación y lote ('N/A') específicos.
-    Es idempotente: crea el registro si no existe, o lo actualiza si ya existe.
-    """
-    logger.debug("Inicio fixture: stock_inicial_toner")
-    ubicacion_test = "Almacén Principal Toner Fixture"
-    lote_defecto = "N/A" # Usar el valor por defecto que definimos en la DB
-    cantidad_inicial = 10
-    costo_inicial = Decimal("25.50")
-    
-    stock_record = db.query(InventarioStock).filter(
-        InventarioStock.tipo_item_id == tipo_item_toner.id,
-        InventarioStock.ubicacion == ubicacion_test,
-        InventarioStock.lote == lote_defecto 
-    ).first()
-
-    if stock_record:
-        # Si ya existe, nos aseguramos de que tenga los valores correctos para la prueba
-        stock_record.cantidad_actual = cantidad_inicial
-        stock_record.costo_promedio_ponderado = costo_inicial
-        stock_record.ultima_actualizacion = datetime.now(timezone.utc)
-    else:
-        # Si no existe, lo creamos con el lote correcto
-        stock_record = InventarioStock(
-            tipo_item_id=tipo_item_toner.id,
-            ubicacion=ubicacion_test,
-            lote=lote_defecto,  # <-- Se establece el lote a 'N/A'
-            cantidad_actual=cantidad_inicial,
-            costo_promedio_ponderado=costo_inicial,
-            ultima_actualizacion=datetime.now(timezone.utc)
-        )
-    
-    db.add(stock_record)
+def stock_inicial_toner(db: Session, tipo_item_toner: TipoItemInventario, test_usuario_regular_fixture: Usuario) -> InventarioStock:
+    location_id = catalog_id(db, Ubicacion, "Almacén Principal Toner Fixture")
+    db.add(InventarioMovimiento(tipo_item_id=tipo_item_toner.id, tipo_movimiento="Entrada Compra", cantidad=10,
+        ubicacion_destino_id=location_id, lote_destino="N/A", costo_unitario=Decimal("25.50"), usuario_id=test_usuario_regular_fixture.id))
     db.flush()
-    db.refresh(stock_record)
-    logger.info(f"Fixture stock_inicial_toner: Stock ID {stock_record.id} con cantidad {stock_record.cantidad_actual} en lote '{stock_record.lote}'.")
-    return stock_record
+    return db.scalar(select(InventarioStock).where(InventarioStock.tipo_item_id==tipo_item_toner.id, InventarioStock.ubicacion_id==location_id, InventarioStock.lote=="N/A"))
 
 @pytest.fixture(scope="function")
 def software_office(db: Session) -> SoftwareCatalogo:
@@ -718,7 +697,7 @@ def software_office(db: Session) -> SoftwareCatalogo:
     version_sw = "2021 Pro"
     sw = db.query(SoftwareCatalogo).filter(SoftwareCatalogo.nombre == nombre_sw, SoftwareCatalogo.version == version_sw).first() # type: ignore
     if not sw:
-        sw = SoftwareCatalogo(nombre=nombre_sw, version=version_sw, tipo_licencia=TipoLicenciaSoftwareEnum.PERPETUA.value, metrica_licenciamiento=MetricaLicenciamientoEnum.POR_DISPOSITIVO.value, fabricante="Microsoft Test", categoria="Ofimática") # type: ignore
+        sw = SoftwareCatalogo(nombre=nombre_sw, version=version_sw, tipo_licencia=TipoLicenciaSoftwareEnum.PERPETUA.value, metrica_licenciamiento=MetricaLicenciamientoEnum.POR_DISPOSITIVO.value, marca_id=catalog_id(db, Marca, "Microsoft Test"), categoria="Ofimática") # type: ignore
         db.add(sw); db.flush(); db.refresh(sw)
     return sw
 
@@ -729,7 +708,7 @@ def software_win(db: Session) -> SoftwareCatalogo:
     version_sw = "11 Enterprise"
     sw = db.query(SoftwareCatalogo).filter(SoftwareCatalogo.nombre == nombre_sw, SoftwareCatalogo.version == version_sw).first() # type: ignore
     if not sw:
-        sw = SoftwareCatalogo(nombre=nombre_sw, version=version_sw, fabricante="Microsoft Test", categoria="Sistema Operativo", tipo_licencia=TipoLicenciaSoftwareEnum.OEM.value, metrica_licenciamiento=MetricaLicenciamientoEnum.POR_DISPOSITIVO.value) # type: ignore
+        sw = SoftwareCatalogo(nombre=nombre_sw, version=version_sw, marca_id=catalog_id(db, Marca, "Microsoft Test"), categoria="Sistema Operativo", tipo_licencia=TipoLicenciaSoftwareEnum.OEM.value, metrica_licenciamiento=MetricaLicenciamientoEnum.POR_DISPOSITIVO.value) # type: ignore
         db.add(sw); db.flush(); db.refresh(sw)
     return sw
 

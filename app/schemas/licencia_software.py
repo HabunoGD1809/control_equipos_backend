@@ -74,7 +74,7 @@ class LicenciaSoftware(LicenciaSoftwareInDBBase):
 class LicenciaSoftwareSimple(BaseModel):
     id: uuid.UUID
     software_info: Optional[SoftwareCatalogoSimple] = None 
-    clave_producto: Optional[str] = None
+    clave_producto: Optional[str] = Field(None, exclude=True)
     fecha_expiracion: Optional[date] = None
 
     model_config = ConfigDict(from_attributes=True)

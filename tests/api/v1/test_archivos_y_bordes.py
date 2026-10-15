@@ -50,4 +50,4 @@ async def test_subir_archivo_tipo_no_permitido_falla(
     )
 
     assert response.status_code == status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
-    assert "tipo de archivo 'application/zip' no permitido" in response.json()["detail"].lower()
+    assert "formato de archivo no permitido" in response.json()["detail"].lower()

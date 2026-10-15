@@ -1,7 +1,7 @@
 from typing import Literal, Optional, Dict, Any
 from datetime import date, datetime
 from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 class ReporteRequest(BaseModel):
     tipo_reporte: Literal["equipos", "mantenimientos", "kardex", "movimientos", "auditoria", "inventario", "licencias"] = Field(
@@ -11,6 +11,12 @@ class ReporteRequest(BaseModel):
     formato: Literal["csv", "pdf", "excel"] = Field(...)
     fecha_inicio: date = Field(...)
     fecha_fin: date = Field(...)
+
+    @model_validator(mode="after")
+    def validate_period(self):
+        if self.fecha_inicio > self.fecha_fin:
+            raise ValueError("La fecha inicial no puede ser posterior a la fecha final.")
+        return self
 
 class ReporteResponse(BaseModel):
     id: UUID

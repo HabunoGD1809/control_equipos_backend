@@ -44,14 +44,14 @@ async def test_password_recovery_flow(
     response_request = await client.post(
         f"{settings.API_V1_STR}/auth/password-recovery/request-reset",
         headers=admin_headers,
-        json={"username": username},
+        json={"username_or_email": username},
     )
     assert response_request.status_code == status.HTTP_200_OK
     reset_token = response_request.json()["reset_token"]
     assert reset_token
 
     # 2. El usuario usa el token para cambiar la contraseña
-    reset_data = {"token": reset_token, "new_password": new_password, "username": username}
+    reset_data = {"token": reset_token, "new_password": new_password, "username_or_email": username}
     response_reset = await client.post(
         f"{settings.API_V1_STR}/auth/password-recovery/confirm-reset",
         json=reset_data,
@@ -91,14 +91,14 @@ async def test_request_password_recovery_for_nonexistent_user(
     response = await client.post(
         f"{settings.API_V1_STR}/auth/password-recovery/request-reset",
         headers=headers,
-        json={"username": f"no_existe_{uuid4().hex[:6]}"},
+        json={"username_or_email": f"no_existe_{uuid4().hex[:6]}"},
     )
     assert response.status_code == status.HTTP_404_NOT_FOUND
 
 @pytest.mark.parametrize(
     "token_type, expected_status, expected_detail",
     [
-        ("malformed", status.HTTP_422_UNPROCESSABLE_ENTITY, "Input should be a valid UUID"),
+        ("malformed", status.HTTP_422_UNPROCESSABLE_CONTENT, "Input should be a valid UUID"),
         ("nonexistent", status.HTTP_400_BAD_REQUEST, "inválido"),
     ],
 )
@@ -127,7 +127,7 @@ async def test_reset_password_with_invalid_tokens(
     reset_data = {
         "token": token,
         "new_password": "any_password",
-        "username": username,
+        "username_or_email": username,
     }
 
     response = await client.post(

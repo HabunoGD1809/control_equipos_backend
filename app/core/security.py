@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Union, Optional, Set, List
 
-from jose import jwt, JWTError
+import jwt
+from jwt import InvalidTokenError
+from uuid import uuid4
 from pydantic import ValidationError
 import logging
 
@@ -14,7 +16,7 @@ logger = logging.getLogger(__name__)
 ALGORITHM = settings.ALGORITHM
 
 def create_access_token(
-    subject: Union[str, Any], expires_delta: Optional[timedelta] = None
+    subject: Union[str, Any], expires_delta: Optional[timedelta] = None, *, session_version: int = 0
 ) -> str:
     """
     Crea un nuevo token de acceso JWT.
@@ -24,12 +26,12 @@ def create_access_token(
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
-    to_encode = {"exp": expire, "sub": str(subject)}
+    to_encode = {"exp": expire, "sub": str(subject), "jti": str(uuid4()), "kind": "access", "ver": session_version}
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
 def create_refresh_token(
-    subject: Union[str, Any], expires_delta: Optional[timedelta] = None
+    subject: Union[str, Any], expires_delta: Optional[timedelta] = None, *, session_version: int = 0
 ) -> str:
     """
     Crea un nuevo token de refresco JWT.
@@ -39,7 +41,7 @@ def create_refresh_token(
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.REFRESH_TOKEN_EXPIRE_MINUTES)
         
-    to_encode = {"exp": expire, "sub": str(subject)}
+    to_encode = {"exp": expire, "sub": str(subject), "jti": str(uuid4()), "kind": "refresh", "ver": session_version}
     encoded_jwt = jwt.encode(to_encode, settings.REFRESH_TOKEN_SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
@@ -49,10 +51,12 @@ def decode_access_token(token: str) -> Optional[TokenPayload]:
     """
     try:
         payload_dict = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[ALGORITHM]
+            token, settings.SECRET_KEY, algorithms=[ALGORITHM], options={"require": ["exp", "sub", "jti", "kind"]}
         )
+        if payload_dict.get("kind") != "access":
+            return None
         return TokenPayload(**payload_dict)
-    except (JWTError, ValidationError, KeyError) as e:
+    except (InvalidTokenError, ValidationError, KeyError) as e:
         logger.error(f"Error decodificando token de acceso: {e}")
         return None
 
@@ -62,10 +66,12 @@ def decode_refresh_token(token: str) -> Optional[TokenPayload]:
     """
     try:
         payload_dict = jwt.decode(
-            token, settings.REFRESH_TOKEN_SECRET_KEY, algorithms=[ALGORITHM]
+            token, settings.REFRESH_TOKEN_SECRET_KEY, algorithms=[ALGORITHM], options={"require": ["exp", "sub", "jti", "kind"]}
         )
+        if payload_dict.get("kind") != "refresh":
+            return None
         return TokenPayload(**payload_dict)
-    except (JWTError, ValidationError, KeyError) as e:
+    except (InvalidTokenError, ValidationError, KeyError) as e:
         logger.error(f"Error decodificando token de refresco: {e}")
         return None
 

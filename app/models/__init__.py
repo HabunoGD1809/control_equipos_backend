@@ -29,6 +29,7 @@ from .reporte import Reporte
 from .departamento import Departamento
 from .marca import Marca
 from .empleado import Empleado
+from .empresa import Empresa
 
 
 __all__ = [

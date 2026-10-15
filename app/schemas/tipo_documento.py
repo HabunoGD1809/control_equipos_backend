@@ -1,8 +1,18 @@
 import uuid
-from typing import Optional, List
+from typing import Optional, List, Annotated
 from datetime import datetime
 
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, AfterValidator
+
+def normalize_formats(value):
+    if value is None: return None
+    formats = list(dict.fromkeys(item.strip().lstrip('.').lower() for item in value if item.strip()))
+    allowed = {'pdf', 'jpg', 'jpeg', 'png', 'webp', 'doc', 'docx', 'xls', 'xlsx', 'txt'}
+    if any(item not in allowed for item in formats):
+        raise ValueError('Selecciona formatos admitidos: PDF, JPG, PNG, WEBP, DOC, DOCX, XLS, XLSX o TXT.')
+    return formats
+
+DocumentFormats = Annotated[Optional[List[str]], AfterValidator(normalize_formats)]
 
 # --- Schema Base ---
 class TipoDocumentoBase(BaseModel):
@@ -28,7 +38,7 @@ class TipoDocumentoBase(BaseModel):
 # --- Schema para Creación ---
 class TipoDocumentoCreate(TipoDocumentoBase):
     """Schema utilizado para crear un nuevo tipo de documento."""
-    pass
+    formato_permitido: DocumentFormats = None
 
 # --- Schema para Actualización ---
 class TipoDocumentoUpdate(BaseModel):
@@ -39,7 +49,7 @@ class TipoDocumentoUpdate(BaseModel):
     nombre: Optional[str] = Field(None, max_length=100)
     descripcion: Optional[str] = None
     requiere_verificacion: Optional[bool] = None
-    formato_permitido: Optional[List[str]] = None
+    formato_permitido: DocumentFormats = None
 
 # --- Schema Interno DB ---
 class TipoDocumentoInDBBase(TipoDocumentoBase):

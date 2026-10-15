@@ -1,5 +1,5 @@
-# 1. Imagen base anclada a Debian 12 (Bookworm)
-FROM python:3.11-slim-bookworm
+# Python 3.13 y cliente PostgreSQL 17 de Debian 13.
+FROM python:3.13-slim-trixie
 
 # 2. Variables de entorno esenciales
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -11,7 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN apt-get update && \
    apt-get upgrade -y --no-install-recommends && \
    apt-get install -y --no-install-recommends \
-   postgresql-client && \
+   postgresql-client fonts-dejavu-core && \
    rm -rf /var/lib/apt/lists/*
 
 # 4. Crear usuario no-root por seguridad
@@ -22,7 +22,7 @@ WORKDIR /home/app
 
 # --- INTEGRACIÓN CON UV ---
 # 6. Copiar el binario ultrarrápido de uv desde la imagen oficial
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.10.8 /uv /uvx /bin/
 
 # 7. Copiar SOLO archivos de dependencias primero.
 COPY --chown=app:app pyproject.toml uv.lock ./
@@ -43,7 +43,7 @@ COPY --chown=app:app ./scripts ./scripts
 RUN uv sync --frozen --no-dev
 
 # 11. Garantizar que los scripts tengan permisos de ejecución
-RUN chmod +x ./scripts/*.sh
+RUN chmod +x ./scripts/*.sh && mkdir -p uploads logs backups && chown -R app:app uploads logs backups
 
 # 12. Cambiar al usuario seguro
 USER app
@@ -52,4 +52,5 @@ USER app
 EXPOSE 8000
 
 # CMD por defecto — usa uv run para ejecutar en el virtualenv gestionado por uv
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["./scripts/entrypoint.sh"]
+CMD ["uv", "run", "--frozen", "--no-sync", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
